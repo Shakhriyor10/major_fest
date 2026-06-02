@@ -1,8 +1,9 @@
 import * as ImagePicker from "expo-image-picker";
 import * as SecureStore from "expo-secure-store";
-import { ResizeMode, Video } from "expo-av";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { ResizeMode, Video, VideoFullscreenUpdate } from "expo-av";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,7 +17,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { ViewStyle } from "react-native";
+import type { NativeScrollEvent, NativeSyntheticEvent, ViewStyle } from "react-native";
 
 import {
   API_BASE_URL,
@@ -124,6 +125,18 @@ async function getApiError(response: Response) {
   }
   try {
     const parsed = JSON.parse(text);
+    if (typeof parsed === "string") {
+      return parsed;
+    }
+    if (Array.isArray(parsed)) {
+      return parsed.join("\n");
+    }
+    if (parsed && typeof parsed === "object") {
+      return Object.values(parsed)
+        .flat()
+        .map((value) => String(value))
+        .join("\n");
+    }
     return JSON.stringify(parsed);
   } catch {
     return text;
@@ -963,13 +976,7 @@ function FestivalMediaGallery({ festival }: { festival: Festival }) {
             <View key={item.id} style={styles.mediaCard}>
               <View style={styles.mediaFrame}>
                 {item.media_type === "video" ? (
-                  <Video
-                    source={{ uri: fileUrl }}
-                    style={styles.mediaVisual}
-                    resizeMode={ResizeMode.COVER}
-                    useNativeControls
-                    shouldPlay={false}
-                  />
+                  <FestivalVideo uri={fileUrl} />
                 ) : (
                   <Image source={{ uri: fileUrl }} style={styles.mediaVisual} />
                 )}
@@ -989,11 +996,98 @@ function FestivalMediaGallery({ festival }: { festival: Festival }) {
   );
 }
 
-function FestivalCover({ festival, height }: { festival: Festival; height: number }) {
+function FestivalVideo({ uri }: { uri: string }) {
+  const videoRef = useRef<Video>(null);
+
+  async function openFullscreen() {
+    try {
+      if (Platform.OS !== "web") {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      }
+      await videoRef.current?.presentFullscreenPlayer();
+    } catch {
+      await closeFullscreen();
+      Alert.alert("Не удалось открыть видео", "Попробуй включить полноэкранный режим через плеер.");
+    }
+  }
+
+  async function closeFullscreen() {
+    try {
+      if (Platform.OS !== "web") {
+        await ScreenOrientation.unlockAsync();
+      }
+    } catch {
+      // Orientation is a convenience here; video playback should keep working even if unlock fails.
+    }
+  }
+
   return (
-    <View style={[styles.cover, { height }]}>
-      {festival.cover_image ? (
-        <Image source={{ uri: mediaUrl(festival.cover_image) ?? "" }} style={styles.coverImage} />
+    <View style={styles.mediaVideoWrap}>
+      <Video
+        ref={videoRef}
+        source={{ uri }}
+        style={styles.mediaVisual}
+        resizeMode={ResizeMode.COVER}
+        useNativeControls
+        shouldPlay={false}
+        onFullscreenUpdate={(event) => {
+          if (event.fullscreenUpdate === VideoFullscreenUpdate.PLAYER_DID_DISMISS) {
+            closeFullscreen();
+          }
+        }}
+      />
+      <Pressable style={styles.videoFullscreenButton} onPress={openFullscreen}>
+        <Text style={styles.videoFullscreenText}>Во весь экран</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function FestivalCover({ festival, height }: { festival: Festival; height: number }) {
+  const [activeSlide, setActiveSlide] = useState(0);
+  const [coverWidth, setCoverWidth] = useState(0);
+  const imageMedia = (festival.media_items ?? [])
+    .filter((item) => item.media_type === "image")
+    .slice(0, 5)
+    .map((item) => item.file);
+  const slides = [festival.cover_image, ...imageMedia].filter(Boolean).slice(0, 5) as string[];
+
+  function updateActiveSlide(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const slideWidth = event.nativeEvent.layoutMeasurement.width;
+    if (slideWidth <= 0) {
+      return;
+    }
+    setActiveSlide(Math.round(event.nativeEvent.contentOffset.x / slideWidth));
+  }
+
+  return (
+    <View
+      style={[styles.cover, { height }]}
+      onLayout={(event) => setCoverWidth(event.nativeEvent.layout.width)}
+    >
+      {slides.length > 0 ? (
+        <>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={updateActiveSlide}
+            style={styles.coverCarousel}
+          >
+            {slides.map((slide, index) => (
+              <View key={`${slide}-${index}`} style={[styles.coverSlide, { width: coverWidth || 1 }]}>
+                <Image source={{ uri: mediaUrl(slide) ?? "" }} style={styles.coverImage} />
+              </View>
+            ))}
+          </ScrollView>
+          {slides.length > 1 && (
+            <View style={styles.coverDots}>
+              {slides.map((slide, index) => (
+                <View key={`${slide}-dot-${index}`} style={[styles.coverDot, index === activeSlide && styles.coverDotActive]} />
+              ))}
+            </View>
+          )}
+        </>
       ) : (
         <View style={styles.coverFallback}>
           <Text style={styles.coverText}>MAJOR</Text>
@@ -1723,9 +1817,35 @@ const styles = StyleSheet.create({
     backgroundColor: "#111114",
     overflow: "hidden",
   },
+  coverCarousel: {
+    flex: 1,
+  },
+  coverSlide: {
+    height: "100%",
+    backgroundColor: "#111114",
+  },
   coverImage: {
     width: "100%",
     height: "100%",
+  },
+  coverDots: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 7,
+  },
+  coverDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 7,
+    backgroundColor: "rgba(255,255,255,0.42)",
+  },
+  coverDotActive: {
+    width: 20,
+    backgroundColor: "#E50914",
   },
   coverFallback: {
     flex: 1,
@@ -1924,6 +2044,25 @@ const styles = StyleSheet.create({
   mediaVisual: {
     width: "100%",
     height: "100%",
+  },
+  mediaVideoWrap: {
+    width: "100%",
+    height: "100%",
+  },
+  videoFullscreenButton: {
+    position: "absolute",
+    left: 10,
+    bottom: 10,
+    minHeight: 34,
+    borderRadius: 8,
+    backgroundColor: "rgba(229,9,20,0.94)",
+    justifyContent: "center",
+    paddingHorizontal: 11,
+  },
+  videoFullscreenText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
   },
   mediaTypeBadge: {
     position: "absolute",

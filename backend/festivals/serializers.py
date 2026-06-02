@@ -212,6 +212,28 @@ class FestivalApplicationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["status", "moderator_note", "created_at"]
 
+    def validate(self, attrs):
+        festival = attrs.get("festival") or getattr(self.instance, "festival", None)
+        cars = attrs.get("cars", [])
+        if not festival or not cars:
+            return attrs
+
+        active_application = FestivalApplication.objects.filter(
+            festival=festival,
+            cars__in=cars,
+        ).distinct().first()
+        if active_application:
+            used_cars = active_application.cars.filter(id__in=[car.id for car in cars])
+            used_names = ", ".join(f"{car.make} {car.model}" for car in used_cars)
+            raise serializers.ValidationError({
+                "cars": (
+                    f"Вы уже участвуете в этом фестивале с машиной: {used_names}. "
+                    "Пожалуйста, ждите ответа или выберите другую машину."
+                )
+            })
+
+        return attrs
+
     def create(self, validated_data):
         uploaded_photos = validated_data.pop("uploaded_photos", [])
         cars = validated_data.pop("cars", [])
