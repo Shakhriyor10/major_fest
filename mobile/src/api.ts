@@ -1,4 +1,4 @@
-export const API_BASE_URL = "http://127.0.0.1:8000/api";
+export const API_BASE_URL = "https://major-motors-sam.uz/api";
 export const SERVER_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "");
 
 export type Festival = {
@@ -8,11 +8,23 @@ export type Festival = {
   city: string;
   address: string;
   start_date: string;
+  end_date?: string | null;
   prize_fund: string | null;
   prize_places: number | null;
   car_slots: number | null;
   cover_image?: string;
+  media_items: FestivalMedia[];
   applications_count: number;
+};
+
+export type FestivalMedia = {
+  id: number;
+  media_type: "image" | "video";
+  file: string;
+  title: string;
+  description: string;
+  order: number;
+  created_at: string;
 };
 
 export type AppSettings = {

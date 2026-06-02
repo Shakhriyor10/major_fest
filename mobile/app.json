@@ -5,6 +5,11 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/logo_major.png",
+    "splash": {
+      "image": "./assets/logo_major.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#08080A"
+    },
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
       "**/*"

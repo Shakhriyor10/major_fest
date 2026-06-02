@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import AppSettings, ApplicationPhoto, Festival, FestivalApplication, ParticipantCar, ParticipantCarPhoto, ParticipantProfile
+from .models import (
+    AppSettings,
+    ApplicationPhoto,
+    Festival,
+    FestivalApplication,
+    FestivalMedia,
+    ParticipantCar,
+    ParticipantCarPhoto,
+    ParticipantProfile,
+)
 
 
 @admin.register(AppSettings)
@@ -13,11 +22,24 @@ class ApplicationPhotoInline(admin.TabularInline):
     extra = 0
 
 
+class FestivalMediaInline(admin.TabularInline):
+    model = FestivalMedia
+    extra = 1
+
+
 @admin.register(Festival)
 class FestivalAdmin(admin.ModelAdmin):
     list_display = ("title", "city", "start_date", "status", "car_slots", "prize_fund")
     list_filter = ("status", "city")
     search_fields = ("title", "city", "address")
+    inlines = [FestivalMediaInline]
+
+
+@admin.register(FestivalMedia)
+class FestivalMediaAdmin(admin.ModelAdmin):
+    list_display = ("festival", "media_type", "title", "order", "created_at")
+    list_filter = ("media_type", "festival")
+    search_fields = ("festival__title", "title", "description")
 
 
 @admin.register(FestivalApplication)

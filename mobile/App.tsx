@@ -1,4 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
+import * as SecureStore from "expo-secure-store";
+import { ResizeMode, Video } from "expo-av";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -84,6 +86,8 @@ const applicationStatusStyles: Record<Application["status"], ViewStyle> = {
   rejected: { backgroundColor: "#FFE0E0" },
 };
 
+const STORED_PROFILE_ID_KEY = "major_fest_profile_id";
+
 function countdownParts(dateValue: string, now: Date) {
   const target = new Date(dateValue);
   const diff = target.getTime() - now.getTime();
@@ -165,6 +169,30 @@ function confirmAction(title: string, message: string): Promise<boolean> {
   });
 }
 
+async function saveStoredProfileId(profileId: number) {
+  if (Platform.OS === "web") {
+    window.localStorage.setItem(STORED_PROFILE_ID_KEY, String(profileId));
+    return;
+  }
+  await SecureStore.setItemAsync(STORED_PROFILE_ID_KEY, String(profileId));
+}
+
+async function loadStoredProfileId() {
+  const value = Platform.OS === "web"
+    ? window.localStorage.getItem(STORED_PROFILE_ID_KEY)
+    : await SecureStore.getItemAsync(STORED_PROFILE_ID_KEY);
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+async function clearStoredProfileId() {
+  if (Platform.OS === "web") {
+    window.localStorage.removeItem(STORED_PROFILE_ID_KEY);
+    return;
+  }
+  await SecureStore.deleteItemAsync(STORED_PROFILE_ID_KEY);
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [now, setNow] = useState(() => new Date());
@@ -199,6 +227,7 @@ export default function App() {
   useEffect(() => {
     loadFestivals();
     loadAppSettings();
+    restoreSession();
   }, []);
 
   async function loadAppSettings() {
@@ -206,6 +235,17 @@ export default function App() {
       setAppSettings(await fetchAppSettings());
     } catch {
       setAppSettings(null);
+    }
+  }
+
+  async function restoreSession() {
+    try {
+      const storedProfileId = await loadStoredProfileId();
+      if (storedProfileId) {
+        await refreshProfile(storedProfileId);
+      }
+    } catch {
+      await clearStoredProfileId();
     }
   }
 
@@ -328,6 +368,7 @@ export default function App() {
       const savedProfile = authMode === "register"
         ? await registerProfileApi(payload)
         : await loginProfile(payload);
+      await saveStoredProfileId(savedProfile.id);
       setProfile(savedProfile);
       setProfileEditForm({
         full_name: savedProfile.full_name,
@@ -480,7 +521,8 @@ export default function App() {
     }
   }
 
-  function logoutProfile() {
+  async function logoutProfile() {
+    await clearStoredProfileId();
     setProfile(null);
     setApplications([]);
     setSelectedCarIds([]);
@@ -670,6 +712,7 @@ function HomeScreen({
           festival={selectedFestival}
           profile={profile}
           logoUrl={logoUrl}
+          now={now}
         selectedCarIds={selectedCarIds}
         carsMenuOpen={carsMenuOpen}
         submitting={submitting}
@@ -768,6 +811,7 @@ function FestivalDetail({
   festival,
   profile,
   logoUrl,
+  now,
   selectedCarIds,
   carsMenuOpen,
   submitting,
@@ -780,6 +824,7 @@ function FestivalDetail({
   festival: Festival;
   profile: Profile | null;
   logoUrl?: string;
+  now: Date;
   selectedCarIds: number[];
   carsMenuOpen: boolean;
   submitting: boolean;
@@ -796,6 +841,7 @@ function FestivalDetail({
   });
   const selectedCars = profile?.cars.filter((car) => selectedCarIds.includes(car.id)) ?? [];
   const prizeFund = formatMoney(festival.prize_fund);
+  const countdown = countdownParts(festival.start_date, now);
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -808,6 +854,9 @@ function FestivalDetail({
         <Text style={styles.detailCity}>{festival.city}</Text>
         <Text style={styles.detailTitle}>{festival.title}</Text>
         {!!festival.description && <Text style={styles.detailText}>{festival.description}</Text>}
+        <View style={styles.detailCountdownWrap}>
+          <CountdownCard countdown={countdown} />
+        </View>
 
         <View style={styles.statsRow}>
           <Stat label="Дата" value={date} />
@@ -818,6 +867,8 @@ function FestivalDetail({
           {festival.car_slots !== null && <Stat label="Лимит машин" value={String(festival.car_slots)} />}
         </View>
       </View>
+
+      <FestivalMediaGallery festival={festival} />
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Заявка</Text>
@@ -888,6 +939,53 @@ function FestivalDetail({
         )}
       </View>
     </ScrollView>
+  );
+}
+
+function FestivalMediaGallery({ festival }: { festival: Festival }) {
+  const mediaItems = festival.media_items ?? [];
+
+  if (mediaItems.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.mediaSection}>
+      <View style={[styles.sectionHeaderRow, styles.mediaHeader]}>
+        <Text style={styles.sectionTitle}>Медиа</Text>
+        <Text style={styles.mediaCount}>{mediaItems.length}</Text>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRail}>
+        {mediaItems.map((item) => {
+          const fileUrl = mediaUrl(item.file) ?? "";
+
+          return (
+            <View key={item.id} style={styles.mediaCard}>
+              <View style={styles.mediaFrame}>
+                {item.media_type === "video" ? (
+                  <Video
+                    source={{ uri: fileUrl }}
+                    style={styles.mediaVisual}
+                    resizeMode={ResizeMode.COVER}
+                    useNativeControls
+                    shouldPlay={false}
+                  />
+                ) : (
+                  <Image source={{ uri: fileUrl }} style={styles.mediaVisual} />
+                )}
+                <View style={styles.mediaTypeBadge}>
+                  <Text style={styles.mediaTypeText}>{item.media_type === "video" ? "Видео" : "Фото"}</Text>
+                </View>
+              </View>
+              <View style={styles.mediaBody}>
+                <Text style={styles.mediaTitle}>{item.title || festival.title}</Text>
+                {!!item.description && <Text style={styles.mediaDescription}>{item.description}</Text>}
+              </View>
+            </View>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -1760,6 +1858,9 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginTop: 10,
   },
+  detailCountdownWrap: {
+    marginTop: 16,
+  },
   statsRow: {
     flexDirection: "row",
     gap: 10,
@@ -1783,6 +1884,75 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
     marginTop: 6,
+  },
+  mediaSection: {
+    paddingTop: 18,
+    paddingBottom: 10,
+  },
+  mediaHeader: {
+    paddingHorizontal: 18,
+  },
+  mediaCount: {
+    minWidth: 34,
+    minHeight: 30,
+    borderRadius: 8,
+    backgroundColor: "#E50914",
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "center",
+    textAlignVertical: "center",
+    paddingTop: Platform.select({ ios: 7, android: 0, default: 7 }),
+  },
+  mediaRail: {
+    paddingHorizontal: 18,
+    paddingBottom: 8,
+    gap: 12,
+  },
+  mediaCard: {
+    width: 290,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E4E4E8",
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+  },
+  mediaFrame: {
+    height: 190,
+    backgroundColor: "#111114",
+  },
+  mediaVisual: {
+    width: "100%",
+    height: "100%",
+  },
+  mediaTypeBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    minHeight: 30,
+    borderRadius: 8,
+    backgroundColor: "rgba(8,8,10,0.82)",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  mediaTypeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  mediaBody: {
+    padding: 13,
+  },
+  mediaTitle: {
+    color: "#111114",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  mediaDescription: {
+    color: "#656570",
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 7,
   },
   dropdownButton: {
     minHeight: 64,

@@ -5,6 +5,7 @@ from .models import (
     ApplicationPhoto,
     Festival,
     FestivalApplication,
+    FestivalMedia,
     ParticipantCar,
     ParticipantCarPhoto,
     ParticipantProfile,
@@ -17,8 +18,15 @@ class AppSettingsSerializer(serializers.ModelSerializer):
         fields = ["id", "title", "logo", "updated_at"]
 
 
+class FestivalMediaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FestivalMedia
+        fields = ["id", "media_type", "file", "title", "description", "order", "created_at"]
+
+
 class FestivalSerializer(serializers.ModelSerializer):
     applications_count = serializers.IntegerField(read_only=True)
+    media_items = FestivalMediaSerializer(many=True, read_only=True)
 
     class Meta:
         model = Festival
@@ -35,6 +43,7 @@ class FestivalSerializer(serializers.ModelSerializer):
             "car_slots",
             "status",
             "cover_image",
+            "media_items",
             "applications_count",
         ]
 

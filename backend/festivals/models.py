@@ -1,5 +1,11 @@
+from django.core.exceptions import ValidationError
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
+
+
+def validate_festival_media_size(file):
+    if file.size > 200 * 1024 * 1024:
+        raise ValidationError("Размер файла не должен превышать 200 МБ.")
 
 
 class AppSettings(models.Model):
@@ -43,6 +49,33 @@ class Festival(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class FestivalMedia(models.Model):
+    class MediaType(models.TextChoices):
+        IMAGE = "image", "Фото"
+        VIDEO = "video", "Видео"
+
+    festival = models.ForeignKey(
+        Festival,
+        related_name="media_items",
+        on_delete=models.CASCADE,
+        verbose_name="Фестиваль",
+    )
+    media_type = models.CharField("Тип", max_length=10, choices=MediaType.choices, default=MediaType.IMAGE)
+    file = models.FileField("Файл", upload_to="festival_media/", validators=[validate_festival_media_size])
+    title = models.CharField("Заголовок", max_length=160, blank=True)
+    description = models.TextField("Описание", blank=True)
+    order = models.PositiveIntegerField("Порядок", default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "created_at"]
+        verbose_name = "Медиа фестиваля"
+        verbose_name_plural = "Медиа фестиваля"
+
+    def __str__(self):
+        return self.title or f"{self.get_media_type_display()} #{self.id}"
 
 
 class ParticipantProfile(models.Model):
