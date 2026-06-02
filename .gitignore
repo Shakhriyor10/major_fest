@@ -43,7 +43,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-**/migrations/*
+**/migrations/*.py
+!**/migrations/__init__.py
+**/migrations/*.pyc
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -334,3 +336,18 @@ fabric.properties
 
 
 # End of https://www.toptal.com/developers/gitignore/api/python,django,pycharm
+
+# Node / Expo
+node_modules/
+**/node_modules/
+.expo/
+**/.expo/
+dist/
+web-build/
+
+# IDE
+.idea/
+
+# Local Django runtime
+backend/db.sqlite3
+backend/media/

@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Major Fest",
+    "slug": "major-fest",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo_major.png",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo_major.png",
+        "backgroundColor": "#111318"
+      },
+      "package": "com.shakhriyor10.majorfest"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Нужно выбрать фотографии машины для заявки на фестиваль."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "42648d92-3de8-4fd9-8e98-20e99e74d389"
+      }
+    }
+  }
+}
