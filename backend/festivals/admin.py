@@ -5,6 +5,7 @@ from .models import (
     ApplicationPhoto,
     Festival,
     FestivalApplication,
+    FestivalCoverSlide,
     FestivalMedia,
     ParticipantCar,
     ParticipantCarPhoto,
@@ -27,12 +28,25 @@ class FestivalMediaInline(admin.TabularInline):
     extra = 1
 
 
+class FestivalCoverSlideInline(admin.TabularInline):
+    model = FestivalCoverSlide
+    extra = 1
+    max_num = 5
+
+
 @admin.register(Festival)
 class FestivalAdmin(admin.ModelAdmin):
     list_display = ("title", "city", "start_date", "status", "car_slots", "prize_fund")
     list_filter = ("status", "city")
     search_fields = ("title", "city", "address")
-    inlines = [FestivalMediaInline]
+    inlines = [FestivalCoverSlideInline, FestivalMediaInline]
+
+
+@admin.register(FestivalCoverSlide)
+class FestivalCoverSlideAdmin(admin.ModelAdmin):
+    list_display = ("festival", "title", "order", "created_at")
+    list_filter = ("festival",)
+    search_fields = ("festival__title", "title")
 
 
 @admin.register(FestivalMedia)

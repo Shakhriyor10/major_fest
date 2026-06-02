@@ -51,6 +51,27 @@ class Festival(models.Model):
         return self.title
 
 
+class FestivalCoverSlide(models.Model):
+    festival = models.ForeignKey(
+        Festival,
+        related_name="cover_slides",
+        on_delete=models.CASCADE,
+        verbose_name="Фестиваль",
+    )
+    image = models.ImageField("Фото карусели", upload_to="festival_cover_slides/")
+    title = models.CharField("Заголовок", max_length=120, blank=True)
+    order = models.PositiveIntegerField("Порядок", default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "created_at"]
+        verbose_name = "Фото карусели"
+        verbose_name_plural = "Фото карусели"
+
+    def __str__(self):
+        return self.title or f"Фото карусели #{self.id}"
+
+
 class FestivalMedia(models.Model):
     class MediaType(models.TextChoices):
         IMAGE = "image", "Фото"

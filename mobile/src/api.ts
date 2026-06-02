@@ -13,8 +13,17 @@ export type Festival = {
   prize_places: number | null;
   car_slots: number | null;
   cover_image?: string;
+  cover_slides: FestivalCoverSlide[];
   media_items: FestivalMedia[];
   applications_count: number;
+};
+
+export type FestivalCoverSlide = {
+  id: number;
+  image: string;
+  title: string;
+  order: number;
+  created_at: string;
 };
 
 export type FestivalMedia = {

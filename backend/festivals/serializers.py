@@ -5,6 +5,7 @@ from .models import (
     ApplicationPhoto,
     Festival,
     FestivalApplication,
+    FestivalCoverSlide,
     FestivalMedia,
     ParticipantCar,
     ParticipantCarPhoto,
@@ -24,8 +25,15 @@ class FestivalMediaSerializer(serializers.ModelSerializer):
         fields = ["id", "media_type", "file", "title", "description", "order", "created_at"]
 
 
+class FestivalCoverSlideSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FestivalCoverSlide
+        fields = ["id", "image", "title", "order", "created_at"]
+
+
 class FestivalSerializer(serializers.ModelSerializer):
     applications_count = serializers.IntegerField(read_only=True)
+    cover_slides = FestivalCoverSlideSerializer(many=True, read_only=True)
     media_items = FestivalMediaSerializer(many=True, read_only=True)
 
     class Meta:
@@ -43,6 +51,7 @@ class FestivalSerializer(serializers.ModelSerializer):
             "car_slots",
             "status",
             "cover_image",
+            "cover_slides",
             "media_items",
             "applications_count",
         ]

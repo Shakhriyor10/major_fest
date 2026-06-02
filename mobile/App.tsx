@@ -1046,11 +1046,28 @@ function FestivalVideo({ uri }: { uri: string }) {
 function FestivalCover({ festival, height }: { festival: Festival; height: number }) {
   const [activeSlide, setActiveSlide] = useState(0);
   const [coverWidth, setCoverWidth] = useState(0);
-  const imageMedia = (festival.media_items ?? [])
-    .filter((item) => item.media_type === "image")
+  const carouselRef = useRef<ScrollView>(null);
+  const slides = (festival.cover_slides ?? [])
     .slice(0, 5)
-    .map((item) => item.file);
-  const slides = [festival.cover_image, ...imageMedia].filter(Boolean).slice(0, 5) as string[];
+    .map((slide) => slide.image);
+  const fallbackSlide = festival.cover_image ? [festival.cover_image] : [];
+  const coverSlides = slides.length > 0 ? slides : fallbackSlide;
+
+  useEffect(() => {
+    if (coverSlides.length <= 1 || coverWidth <= 0) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => {
+      setActiveSlide((current) => {
+        const next = (current + 1) % coverSlides.length;
+        carouselRef.current?.scrollTo({ x: next * coverWidth, animated: true });
+        return next;
+      });
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [coverSlides.length, coverWidth]);
 
   function updateActiveSlide(event: NativeSyntheticEvent<NativeScrollEvent>) {
     const slideWidth = event.nativeEvent.layoutMeasurement.width;
@@ -1065,24 +1082,25 @@ function FestivalCover({ festival, height }: { festival: Festival; height: numbe
       style={[styles.cover, { height }]}
       onLayout={(event) => setCoverWidth(event.nativeEvent.layout.width)}
     >
-      {slides.length > 0 ? (
+      {coverSlides.length > 0 ? (
         <>
           <ScrollView
+            ref={carouselRef}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
             onMomentumScrollEnd={updateActiveSlide}
             style={styles.coverCarousel}
           >
-            {slides.map((slide, index) => (
+            {coverSlides.map((slide, index) => (
               <View key={`${slide}-${index}`} style={[styles.coverSlide, { width: coverWidth || 1 }]}>
                 <Image source={{ uri: mediaUrl(slide) ?? "" }} style={styles.coverImage} />
               </View>
             ))}
           </ScrollView>
-          {slides.length > 1 && (
+          {coverSlides.length > 1 && (
             <View style={styles.coverDots}>
-              {slides.map((slide, index) => (
+              {coverSlides.map((slide, index) => (
                 <View key={`${slide}-dot-${index}`} style={[styles.coverDot, index === activeSlide && styles.coverDotActive]} />
               ))}
             </View>
