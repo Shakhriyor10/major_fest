@@ -351,3 +351,4 @@ eas-build-log.txt
 # Local Django runtime
 backend/db.sqlite3
 backend/media/
+backend/staticfiles/
