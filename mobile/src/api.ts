@@ -12,9 +12,12 @@ export type Festival = {
   prize_fund: string | null;
   prize_places: number | null;
   car_slots: number | null;
+  status: "draft" | "open" | "closed" | "finished";
   cover_image?: string;
   cover_slides: FestivalCoverSlide[];
   media_items: FestivalMedia[];
+  winners: FestivalWinner[];
+  comments: FestivalComment[];
   applications_count: number;
 };
 
@@ -36,6 +39,28 @@ export type FestivalMedia = {
   created_at: string;
 };
 
+export type FestivalWinner = {
+  id: number;
+  place: number;
+  title: string;
+  participant_name: string;
+  car_name: string;
+  description: string;
+  image?: string;
+  is_published: boolean;
+  created_at: string;
+};
+
+export type FestivalComment = {
+  id: number;
+  festival: number;
+  participant: number;
+  participant_name: string;
+  participant_photo?: string;
+  text: string;
+  created_at: string;
+};
+
 export type AppSettings = {
   id: number;
   title: string;
@@ -47,6 +72,7 @@ export type Profile = {
   id: number;
   full_name: string;
   phone: string;
+  photo?: string;
   telegram: string;
   city: string;
   cars: ProfileCar[];
@@ -167,9 +193,24 @@ export async function fetchProfile(profileId: number): Promise<Profile> {
   return response.json();
 }
 
-export async function updateProfile(profileId: number, payload: Pick<Profile, "full_name" | "telegram" | "city">): Promise<Profile> {
+export async function updateProfile(profileId: number, payload: Pick<Profile, "full_name" | "telegram" | "city"> | FormData): Promise<Profile> {
+  const isFormData = payload instanceof FormData;
   const response = await fetch(`${API_BASE_URL}/profiles/${profileId}/`, {
     method: "PATCH",
+    headers: isFormData ? undefined : {
+      "Content-Type": "application/json",
+    },
+    body: isFormData ? payload : JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
+export async function createFestivalComment(payload: Pick<FestivalComment, "festival" | "participant" | "text">): Promise<FestivalComment> {
+  const response = await fetch(`${API_BASE_URL}/comments/`, {
+    method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
@@ -179,6 +220,15 @@ export async function updateProfile(profileId: number, payload: Pick<Profile, "f
     throw new Error(await response.text());
   }
   return response.json();
+}
+
+export async function deleteFestivalComment(commentId: number, profileId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/comments/${commentId}/?participant=${profileId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
 }
 
 export async function updateCar(carId: number, payload: FormData): Promise<ProfileCar> {

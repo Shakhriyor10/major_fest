@@ -103,6 +103,7 @@ class ParticipantProfile(models.Model):
     full_name = models.CharField("Имя", max_length=160)
     phone = models.CharField("Телефон", max_length=32, unique=True)
     password_hash = models.CharField("Пароль", max_length=128, blank=True)
+    photo = models.ImageField("Фото профиля", upload_to="profile_photos/", blank=True)
     telegram = models.CharField("Telegram", max_length=80, blank=True)
     city = models.CharField("Город", max_length=120, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -147,6 +148,56 @@ class ParticipantCar(models.Model):
 
     def __str__(self):
         return f"{self.make} {self.model} {self.year}"
+
+
+class FestivalWinner(models.Model):
+    festival = models.ForeignKey(
+        Festival,
+        related_name="winners",
+        on_delete=models.CASCADE,
+        verbose_name="Фестиваль",
+    )
+    place = models.PositiveIntegerField("Место")
+    title = models.CharField("Заголовок", max_length=160)
+    participant_name = models.CharField("Имя победителя", max_length=160, blank=True)
+    car_name = models.CharField("Автомобиль", max_length=160, blank=True)
+    description = models.TextField("Описание", blank=True)
+    image = models.ImageField("Фото", upload_to="festival_winners/", blank=True)
+    is_published = models.BooleanField("Опубликовано", default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["place", "created_at"]
+        verbose_name = "Победитель фестиваля"
+        verbose_name_plural = "Победители фестиваля"
+
+    def __str__(self):
+        return f"{self.place}. {self.title}"
+
+
+class FestivalComment(models.Model):
+    festival = models.ForeignKey(
+        Festival,
+        related_name="comments",
+        on_delete=models.CASCADE,
+        verbose_name="Фестиваль",
+    )
+    participant = models.ForeignKey(
+        ParticipantProfile,
+        related_name="festival_comments",
+        on_delete=models.CASCADE,
+        verbose_name="Участник",
+    )
+    text = models.TextField("Комментарий")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Комментарий фестиваля"
+        verbose_name_plural = "Комментарии фестиваля"
+
+    def __str__(self):
+        return f"{self.participant} - {self.festival}"
 
 
 class ParticipantCarPhoto(models.Model):

@@ -3,13 +3,14 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AppSettings, Festival, FestivalApplication, ParticipantCar, ParticipantProfile
+from .models import AppSettings, Festival, FestivalApplication, FestivalComment, ParticipantCar, ParticipantProfile
 from .serializers import (
     AppSettingsSerializer,
     FestivalApplicationSerializer,
     FestivalSerializer,
     AuthLoginSerializer,
     AuthRegisterSerializer,
+    FestivalCommentSerializer,
     ParticipantCarSerializer,
     ParticipantProfileSerializer,
 )
@@ -28,7 +29,8 @@ class FestivalViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return (
-            Festival.objects.filter(status=Festival.Status.OPEN)
+            Festival.objects.filter(status__in=[Festival.Status.OPEN, Festival.Status.CLOSED, Festival.Status.FINISHED])
+            .prefetch_related("cover_slides", "media_items", "winners", "comments__participant")
             .annotate(applications_count=Count("applications"))
             .order_by("start_date")
         )
@@ -46,6 +48,32 @@ class FestivalApplicationViewSet(mixins.CreateModelMixin, mixins.ListModelMixin,
         if phone:
             queryset = queryset.filter(phone=phone)
         return queryset
+
+
+class FestivalCommentViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = FestivalCommentSerializer
+
+    def get_queryset(self):
+        queryset = FestivalComment.objects.select_related("festival", "participant")
+        festival_id = self.request.query_params.get("festival")
+        participant_id = self.request.query_params.get("participant")
+        if festival_id:
+            queryset = queryset.filter(festival_id=festival_id)
+        if participant_id:
+            queryset = queryset.filter(participant_id=participant_id)
+        return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        participant_id = request.query_params.get("participant")
+        if not participant_id or str(instance.participant_id) != str(participant_id):
+            return Response({"detail": "Можно удалить только свой комментарий."}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
 
 
 class ParticipantProfileViewSet(

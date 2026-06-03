@@ -24,9 +24,12 @@ import {
   AppSettings,
   Application,
   Festival,
+  FestivalComment,
   Profile,
   ProfileCar,
+  createFestivalComment,
   deleteCar,
+  deleteFestivalComment,
   fetchAppSettings,
   fetchApplications,
   fetchFestivals,
@@ -40,6 +43,7 @@ import {
 
 type Tab = "home" | "profile";
 type ProfileSection = "menu" | "data" | "cars" | "applications";
+type PhoneCountryCode = "UZ" | "KZ" | "KG" | "TJ" | "TM" | "RU" | "CN" | "MN" | "PK" | "AF";
 
 type ProfileForm = {
   full_name: string;
@@ -73,6 +77,9 @@ const initialCarForm: CarForm = {
   tuning_details: "",
 };
 
+const minCarYear = 1900;
+const maxCarYear = 2026;
+
 const statusLabels: Record<Application["status"], string> = {
   new: "Новая",
   reviewing: "На рассмотрении",
@@ -88,6 +95,41 @@ const applicationStatusStyles: Record<Application["status"], ViewStyle> = {
 };
 
 const STORED_PROFILE_ID_KEY = "major_fest_profile_id";
+
+const phoneCountries: Array<{
+  code: PhoneCountryCode;
+  name: string;
+  flag: string;
+  dialCode: string;
+  digits: number;
+  example: string;
+}> = [
+  { code: "UZ", name: "Узбекистан", flag: "🇺🇿", dialCode: "+998", digits: 9, example: "901234567" },
+  { code: "KZ", name: "Казахстан", flag: "🇰🇿", dialCode: "+7", digits: 10, example: "7012345678" },
+  { code: "KG", name: "Киргизия", flag: "🇰🇬", dialCode: "+996", digits: 9, example: "701234567" },
+  { code: "TJ", name: "Таджикистан", flag: "🇹🇯", dialCode: "+992", digits: 9, example: "901234567" },
+  { code: "TM", name: "Туркменистан", flag: "🇹🇲", dialCode: "+993", digits: 8, example: "61234567" },
+  { code: "RU", name: "Россия", flag: "🇷🇺", dialCode: "+7", digits: 10, example: "9012345678" },
+  { code: "CN", name: "Китай", flag: "🇨🇳", dialCode: "+86", digits: 11, example: "13123456789" },
+  { code: "MN", name: "Монголия", flag: "🇲🇳", dialCode: "+976", digits: 8, example: "99112233" },
+  { code: "PK", name: "Пакистан", flag: "🇵🇰", dialCode: "+92", digits: 10, example: "3012345678" },
+  { code: "AF", name: "Афганистан", flag: "🇦🇫", dialCode: "+93", digits: 9, example: "701234567" },
+];
+
+const defaultPhoneCountry = phoneCountries[0];
+
+function detectPhoneCountry(phone: string) {
+  return phoneCountries
+    .slice()
+    .sort((first, second) => second.dialCode.length - first.dialCode.length)
+    .find((country) => phone.startsWith(country.dialCode)) ?? defaultPhoneCountry;
+}
+
+function phoneDigitsWithoutCountry(phone: string, country: typeof defaultPhoneCountry) {
+  return phone.startsWith(country.dialCode)
+    ? phone.slice(country.dialCode.length).replace(/\D/g, "").slice(0, country.digits)
+    : phone.replace(/\D/g, "").slice(0, country.digits);
+}
 
 function countdownParts(dateValue: string, now: Date) {
   const target = new Date(dateValue);
@@ -116,6 +158,13 @@ function formatMoney(value: string | null) {
     return null;
   }
   return `${Number(value).toLocaleString("ru-RU")} сум`;
+}
+
+function isFestivalEnded(festival: Festival, now: Date) {
+  if (festival.status === "closed" || festival.status === "finished") {
+    return true;
+  }
+  return Boolean(festival.end_date && new Date(festival.end_date).getTime() <= now.getTime());
 }
 
 async function getApiError(response: Response) {
@@ -211,12 +260,16 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [phoneCountry, setPhoneCountry] = useState(defaultPhoneCountry);
+  const [phoneCountryMenuOpen, setPhoneCountryMenuOpen] = useState(false);
   const [festivals, setFestivals] = useState<Festival[]>([]);
   const [selectedFestivalId, setSelectedFestivalId] = useState<number | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileForm>(initialProfileForm);
   const [carForm, setCarForm] = useState<CarForm>(initialCarForm);
   const [carPhotos, setCarPhotos] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [profilePhoto, setProfilePhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [removeProfilePhoto, setRemoveProfilePhoto] = useState(false);
   const [profileEditForm, setProfileEditForm] = useState({ full_name: "", telegram: "", city: "" });
   const [selectedCarIds, setSelectedCarIds] = useState<number[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -224,6 +277,8 @@ export default function App() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingCar, setSavingCar] = useState(false);
   const [carSaveStatus, setCarSaveStatus] = useState("");
+  const [commentText, setCommentText] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [carsMenuOpen, setCarsMenuOpen] = useState(false);
   const [addingCar, setAddingCar] = useState(false);
@@ -287,16 +342,28 @@ export default function App() {
       telegram: freshProfile.telegram,
       city: freshProfile.city,
     });
+    setProfilePhoto(null);
+    setRemoveProfilePhoto(false);
     setApplications(freshApplications);
   }
 
   function updateProfileField(name: keyof ProfileForm, value: string) {
-    const normalizedValue = name === "phone_digits" ? value.replace(/\D/g, "").slice(0, 9) : value;
+    const normalizedValue = name === "phone_digits" ? value.replace(/\D/g, "").slice(0, phoneCountry.digits) : value;
     setProfileForm((current) => ({ ...current, [name]: normalizedValue }));
   }
 
+  function selectPhoneCountry(country: typeof defaultPhoneCountry) {
+    setPhoneCountry(country);
+    setPhoneCountryMenuOpen(false);
+    setProfileForm((current) => ({
+      ...current,
+      phone_digits: current.phone_digits.replace(/\D/g, "").slice(0, country.digits),
+    }));
+  }
+
   function updateCarField(name: keyof CarForm, value: string) {
-    setCarForm((current) => ({ ...current, [name]: value }));
+    const normalizedValue = name === "year" ? value.replace(/\D/g, "").slice(0, 4) : value;
+    setCarForm((current) => ({ ...current, [name]: normalizedValue }));
   }
 
   function carApplications(carId: number) {
@@ -348,10 +415,13 @@ export default function App() {
   }
 
   async function submitAuth() {
-    const phone = `+998${profileForm.phone_digits}`;
+    const phone = `${phoneCountry.dialCode}${profileForm.phone_digits}`;
 
-    if (profileForm.phone_digits.length !== 9) {
-      Alert.alert("Телефон указан неправильно", "После +998 нужно ввести 9 цифр.");
+    if (profileForm.phone_digits.length !== phoneCountry.digits) {
+      Alert.alert(
+        "Телефон указан неправильно",
+        `Для ${phoneCountry.name} после ${phoneCountry.dialCode} нужно ввести ${phoneCountry.digits} цифр.`,
+      );
       return;
     }
 
@@ -388,9 +458,11 @@ export default function App() {
         telegram: savedProfile.telegram,
         city: savedProfile.city,
       });
+      const savedCountry = detectPhoneCountry(savedProfile.phone);
+      setPhoneCountry(savedCountry);
       setProfileForm({
         full_name: savedProfile.full_name,
-        phone_digits: savedProfile.phone.replace("+998", ""),
+        phone_digits: phoneDigitsWithoutCountry(savedProfile.phone, savedCountry),
         password: "",
         password_confirm: "",
       });
@@ -422,6 +494,25 @@ export default function App() {
     }
   }
 
+  async function pickProfilePhoto() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85,
+    });
+
+    if (!result.canceled) {
+      setProfilePhoto(result.assets[0]);
+      setRemoveProfilePhoto(false);
+    }
+  }
+
+  function markProfilePhotoForRemoval() {
+    setProfilePhoto(null);
+    setRemoveProfilePhoto(true);
+  }
+
   async function addCar() {
     setCarSaveStatus("Проверяем данные автомобиля...");
     if (!profile) {
@@ -430,9 +521,9 @@ export default function App() {
       return;
     }
 
-    if (!carForm.make || !carForm.model || !carForm.year || !carForm.engine || !carForm.condition) {
-      setCarSaveStatus("Заполни марку, модель, год, мотор и состояние.");
-      Alert.alert("Автомобиль не заполнен", "Нужны марка, модель, год, мотор и состояние.");
+    if (!carForm.make || !carForm.model || !carForm.year || !carForm.engine) {
+      setCarSaveStatus("Заполни марку, модель, год и мотор.");
+      Alert.alert("Автомобиль не заполнен", "Нужны марка, модель, год и мотор.");
       return;
     }
 
@@ -442,12 +533,24 @@ export default function App() {
       return;
     }
 
+    const carYear = Number(carForm.year);
+    if (carYear < minCarYear || carYear > maxCarYear) {
+      setCarSaveStatus(`Год должен быть от ${minCarYear} до ${maxCarYear}.`);
+      Alert.alert("Год указан неправильно", `Можно указать год только от ${minCarYear} до ${maxCarYear}.`);
+      return;
+    }
+
     try {
       setSavingCar(true);
       setCarSaveStatus(carPhotos.length > 0 ? "Готовим фото к загрузке..." : "Отправляем данные автомобиля...");
       const body = new FormData();
       body.append("owner", String(profile.id));
-      Object.entries(carForm).forEach(([key, value]) => body.append(key, value));
+      Object.entries(carForm).forEach(([key, value]) => {
+        if (key !== "condition") {
+          body.append(key, value);
+        }
+      });
+      body.append("condition", carForm.tuning_details || "Не указано");
       for (const photo of carPhotos) {
         await appendImageToFormData(body, "uploaded_photos", photo);
       }
@@ -518,13 +621,25 @@ export default function App() {
 
     try {
       setSavingProfileEdit(true);
-      const updated = await updateProfile(profile.id, profileEditForm);
+      const body = new FormData();
+      body.append("full_name", profileEditForm.full_name);
+      body.append("telegram", profileEditForm.telegram);
+      body.append("city", profileEditForm.city);
+      if (profilePhoto) {
+        await appendImageToFormData(body, "photo", profilePhoto);
+      }
+      if (removeProfilePhoto) {
+        body.append("remove_photo", "true");
+      }
+      const updated = await updateProfile(profile.id, body);
       setProfile(updated);
       setProfileEditForm({
         full_name: updated.full_name,
         telegram: updated.telegram,
         city: updated.city,
       });
+      setProfilePhoto(null);
+      setRemoveProfilePhoto(false);
       setEditingProfile(false);
       await refreshProfile(updated.id);
     } catch (error) {
@@ -544,6 +659,10 @@ export default function App() {
     setProfileSection("menu");
     setEditingCarId(null);
     setProfileForm(initialProfileForm);
+    setPhoneCountry(defaultPhoneCountry);
+    setPhoneCountryMenuOpen(false);
+    setProfilePhoto(null);
+    setRemoveProfilePhoto(false);
     setProfileEditForm({ full_name: "", telegram: "", city: "" });
   }
 
@@ -563,6 +682,49 @@ export default function App() {
     setSelectedFestivalId(null);
     setSelectedCarIds([]);
     setCarsMenuOpen(false);
+    setCommentText("");
+  }
+
+  async function submitFestivalComment() {
+    if (!profile) {
+      setActiveTab("profile");
+      Alert.alert("Нужен профиль", "Войди в профиль, чтобы оставить комментарий.");
+      return;
+    }
+    if (!selectedFestival || !commentText.trim()) {
+      return;
+    }
+
+    try {
+      setSavingComment(true);
+      await createFestivalComment({
+        festival: selectedFestival.id,
+        participant: profile.id,
+        text: commentText.trim(),
+      });
+      setCommentText("");
+      await loadFestivals();
+    } catch (error) {
+      Alert.alert("Комментарий не отправлен", error instanceof Error ? error.message : "Попробуй еще раз.");
+    } finally {
+      setSavingComment(false);
+    }
+  }
+
+  async function removeFestivalComment(comment: FestivalComment) {
+    if (!profile) {
+      return;
+    }
+    const confirmed = await confirmAction("Удалить комментарий?", "Комментарий исчезнет из обсуждения фестиваля.");
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await deleteFestivalComment(comment.id, profile.id);
+      await loadFestivals();
+    } catch (error) {
+      Alert.alert("Не получилось удалить", error instanceof Error ? error.message : "Попробуй еще раз.");
+    }
   }
 
   async function submitApplication() {
@@ -574,6 +736,11 @@ export default function App() {
 
     if (!selectedFestival) {
       Alert.alert("Фестиваль не выбран", "Открой фестиваль и попробуй еще раз.");
+      return;
+    }
+
+    if (isFestivalEnded(selectedFestival, now)) {
+      Alert.alert("Прием заявок закрыт", "Фестиваль уже завершен, отправить заявку нельзя.");
       return;
     }
 
@@ -595,7 +762,7 @@ export default function App() {
     body.append("car_model", selectedCars.map((car) => car.model).join(", "));
     body.append("car_year", String(firstCar.year));
     body.append("engine", selectedCars.map((car) => car.engine).join(", "));
-    body.append("condition", selectedCars.map((car) => `${car.make} ${car.model}: ${car.condition}`).join("\n"));
+    body.append("condition", selectedCars.map((car) => `${car.make} ${car.model}: ${car.tuning_details || car.condition}`).join("\n"));
     body.append("tuning_details", selectedCars.map((car) => car.tuning_details).filter(Boolean).join("\n"));
     selectedCars.forEach((car) => body.append("cars", String(car.id)));
 
@@ -635,12 +802,17 @@ export default function App() {
             profile={profile}
             selectedCarIds={selectedCarIds}
             carsMenuOpen={carsMenuOpen}
+            commentText={commentText}
+            savingComment={savingComment}
             submitting={submitting}
             onOpenFestival={openFestival}
             onBack={closeFestival}
             onToggleCar={toggleCar}
             onToggleCarsMenu={() => setCarsMenuOpen((value) => !value)}
             onSubmitApplication={submitApplication}
+            onCommentTextChange={setCommentText}
+            onSubmitComment={submitFestivalComment}
+            onDeleteComment={removeFestivalComment}
             onGoProfile={() => setActiveTab("profile")}
           />
         ) : (
@@ -650,7 +822,11 @@ export default function App() {
             activeSection={profileSection}
             profile={profile}
             profileForm={profileForm}
+            phoneCountry={phoneCountry}
+            phoneCountryMenuOpen={phoneCountryMenuOpen}
             profileEditForm={profileEditForm}
+            profilePhoto={profilePhoto}
+            removeProfilePhoto={removeProfilePhoto}
             carForm={carForm}
             carPhotos={carPhotos}
             applications={applications}
@@ -664,7 +840,11 @@ export default function App() {
             onSectionChange={setProfileSection}
             onAuthModeChange={setAuthMode}
             onProfileChange={updateProfileField}
+            onPhoneCountryChange={selectPhoneCountry}
+            onTogglePhoneCountryMenu={() => setPhoneCountryMenuOpen((value) => !value)}
             onProfileEditChange={updateProfileEditField}
+            onPickProfilePhoto={pickProfilePhoto}
+            onRemoveProfilePhoto={markProfilePhotoForRemoval}
             onCarChange={updateCarField}
             onSubmitAuth={submitAuth}
             onPickCarPhotos={pickCarPhotos}
@@ -693,12 +873,17 @@ type HomeProps = {
   profile: Profile | null;
   selectedCarIds: number[];
   carsMenuOpen: boolean;
+  commentText: string;
+  savingComment: boolean;
   submitting: boolean;
   onOpenFestival: (festivalId: number) => void;
   onBack: () => void;
   onToggleCar: (carId: number) => void;
   onToggleCarsMenu: () => void;
   onSubmitApplication: () => void;
+  onCommentTextChange: (text: string) => void;
+  onSubmitComment: () => void;
+  onDeleteComment: (comment: FestivalComment) => void;
   onGoProfile: () => void;
 };
 
@@ -711,12 +896,17 @@ function HomeScreen({
   profile,
   selectedCarIds,
   carsMenuOpen,
+  commentText,
+  savingComment,
   submitting,
   onOpenFestival,
   onBack,
   onToggleCar,
   onToggleCarsMenu,
   onSubmitApplication,
+  onCommentTextChange,
+  onSubmitComment,
+  onDeleteComment,
   onGoProfile,
 }: HomeProps) {
   if (selectedFestival) {
@@ -726,14 +916,19 @@ function HomeScreen({
           profile={profile}
           logoUrl={logoUrl}
           now={now}
-        selectedCarIds={selectedCarIds}
-        carsMenuOpen={carsMenuOpen}
-        submitting={submitting}
+          selectedCarIds={selectedCarIds}
+          carsMenuOpen={carsMenuOpen}
+          commentText={commentText}
+          savingComment={savingComment}
+          submitting={submitting}
         onBack={onBack}
         onToggleCar={onToggleCar}
-        onToggleCarsMenu={onToggleCarsMenu}
-        onSubmitApplication={onSubmitApplication}
-        onGoProfile={onGoProfile}
+          onToggleCarsMenu={onToggleCarsMenu}
+          onSubmitApplication={onSubmitApplication}
+          onCommentTextChange={onCommentTextChange}
+          onSubmitComment={onSubmitComment}
+          onDeleteComment={onDeleteComment}
+          onGoProfile={onGoProfile}
       />
     );
   }
@@ -827,11 +1022,16 @@ function FestivalDetail({
   now,
   selectedCarIds,
   carsMenuOpen,
+  commentText,
+  savingComment,
   submitting,
   onBack,
   onToggleCar,
   onToggleCarsMenu,
   onSubmitApplication,
+  onCommentTextChange,
+  onSubmitComment,
+  onDeleteComment,
   onGoProfile,
 }: {
   festival: Festival;
@@ -840,11 +1040,16 @@ function FestivalDetail({
   now: Date;
   selectedCarIds: number[];
   carsMenuOpen: boolean;
+  commentText: string;
+  savingComment: boolean;
   submitting: boolean;
   onBack: () => void;
   onToggleCar: (carId: number) => void;
   onToggleCarsMenu: () => void;
   onSubmitApplication: () => void;
+  onCommentTextChange: (text: string) => void;
+  onSubmitComment: () => void;
+  onDeleteComment: (comment: FestivalComment) => void;
   onGoProfile: () => void;
 }) {
   const date = new Date(festival.start_date).toLocaleDateString("ru-RU", {
@@ -855,6 +1060,7 @@ function FestivalDetail({
   const selectedCars = profile?.cars.filter((car) => selectedCarIds.includes(car.id)) ?? [];
   const prizeFund = formatMoney(festival.prize_fund);
   const countdown = countdownParts(festival.start_date, now);
+  const ended = isFestivalEnded(festival, now);
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -882,10 +1088,16 @@ function FestivalDetail({
       </View>
 
       <FestivalMediaGallery festival={festival} />
+      <FestivalWinners festival={festival} />
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Заявка</Text>
-        {!profile ? (
+        {ended ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyTitle}>Прием заявок закрыт</Text>
+            <Text style={styles.emptyText}>Фестиваль завершен. Если организатор опубликует победителей, они будут показаны выше.</Text>
+          </View>
+        ) : !profile ? (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>Нужен профиль</Text>
             <Text style={styles.emptyText}>Зарегистрируйся и добавь автомобили, чтобы оставить заявку.</Text>
@@ -951,6 +1163,17 @@ function FestivalDetail({
           </>
         )}
       </View>
+
+      <FestivalComments
+        festival={festival}
+        profile={profile}
+        commentText={commentText}
+        savingComment={savingComment}
+        onCommentTextChange={onCommentTextChange}
+        onSubmitComment={onSubmitComment}
+        onDeleteComment={onDeleteComment}
+        onGoProfile={onGoProfile}
+      />
     </ScrollView>
   );
 }
@@ -996,28 +1219,148 @@ function FestivalMediaGallery({ festival }: { festival: Festival }) {
   );
 }
 
+function FestivalWinners({ festival }: { festival: Festival }) {
+  const winners = festival.winners ?? [];
+
+  if (winners.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Победители</Text>
+      {winners.map((winner) => (
+        <View key={winner.id} style={styles.winnerCard}>
+          {winner.image ? (
+            <Image source={{ uri: mediaUrl(winner.image) ?? "" }} style={styles.winnerImage} />
+          ) : (
+            <View style={styles.winnerImageEmpty}>
+              <Text style={styles.winnerPlace}>{winner.place}</Text>
+            </View>
+          )}
+          <View style={styles.winnerBody}>
+            <Text style={styles.winnerBadge}>{winner.place} место</Text>
+            <Text style={styles.winnerTitle}>{winner.title}</Text>
+            {!!winner.participant_name && <Text style={styles.winnerMeta}>{winner.participant_name}</Text>}
+            {!!winner.car_name && <Text style={styles.winnerMeta}>{winner.car_name}</Text>}
+            {!!winner.description && <Text style={styles.winnerText}>{winner.description}</Text>}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function FestivalComments({
+  festival,
+  profile,
+  commentText,
+  savingComment,
+  onCommentTextChange,
+  onSubmitComment,
+  onDeleteComment,
+  onGoProfile,
+}: {
+  festival: Festival;
+  profile: Profile | null;
+  commentText: string;
+  savingComment: boolean;
+  onCommentTextChange: (text: string) => void;
+  onSubmitComment: () => void;
+  onDeleteComment: (comment: FestivalComment) => void;
+  onGoProfile: () => void;
+}) {
+  const comments = festival.comments ?? [];
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Комментарии</Text>
+      {profile ? (
+        <View style={styles.commentForm}>
+          <TextInput
+            value={commentText}
+            onChangeText={onCommentTextChange}
+            placeholder="Написать комментарий"
+            placeholderTextColor="#8E8E98"
+            multiline
+            style={styles.commentInput}
+          />
+          <Pressable
+            style={[styles.redButton, (!commentText.trim() || savingComment) && styles.buttonDisabled]}
+            onPress={onSubmitComment}
+            disabled={!commentText.trim() || savingComment}
+          >
+            <Text style={styles.redButtonText}>{savingComment ? "Отправляем..." : "Оставить комментарий"}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyTitle}>Войдите в профиль</Text>
+          <Text style={styles.emptyText}>После входа можно оставить комментарий к фестивалю.</Text>
+          <Pressable style={styles.blackButton} onPress={onGoProfile}>
+            <Text style={styles.blackButtonText}>Перейти в профиль</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {comments.length === 0 ? (
+        <Text style={styles.commentsEmpty}>Комментариев пока нет</Text>
+      ) : (
+        <View style={styles.commentsList}>
+          {comments.map((comment) => {
+            const ownComment = profile?.id === comment.participant;
+            return (
+              <View key={comment.id} style={styles.commentCard}>
+                {comment.participant_photo ? (
+                  <Image source={{ uri: mediaUrl(comment.participant_photo) ?? "" }} style={styles.commentAvatar} />
+                ) : (
+                  <View style={styles.commentAvatarEmpty}>
+                    <Text style={styles.commentAvatarText}>{comment.participant_name.slice(0, 1).toUpperCase()}</Text>
+                  </View>
+                )}
+                <View style={styles.commentBody}>
+                  <View style={styles.commentTop}>
+                    <View style={styles.commentInfo}>
+                      <Text style={styles.commentName}>{comment.participant_name}</Text>
+                      <Text style={styles.commentDate}>{new Date(comment.created_at).toLocaleDateString("ru-RU")}</Text>
+                    </View>
+                    {ownComment && (
+                      <Pressable style={styles.commentDeleteButton} onPress={() => onDeleteComment(comment)}>
+                        <Text style={styles.commentDeleteText}>Удалить</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                  <Text style={styles.commentText}>{comment.text}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function FestivalVideo({ uri }: { uri: string }) {
   const videoRef = useRef<Video>(null);
 
-  async function openFullscreen() {
+  async function lockFullscreenOrientation() {
     try {
       if (Platform.OS !== "web") {
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
       }
-      await videoRef.current?.presentFullscreenPlayer();
     } catch {
-      await closeFullscreen();
-      Alert.alert("Не удалось открыть видео", "Попробуй включить полноэкранный режим через плеер.");
+      // Video playback should keep working even if orientation lock fails.
     }
   }
 
-  async function closeFullscreen() {
+  async function unlockFullscreenOrientation() {
     try {
       if (Platform.OS !== "web") {
         await ScreenOrientation.unlockAsync();
       }
     } catch {
-      // Orientation is a convenience here; video playback should keep working even if unlock fails.
+      // Video playback should keep working even if orientation unlock fails.
     }
   }
 
@@ -1031,14 +1374,14 @@ function FestivalVideo({ uri }: { uri: string }) {
         useNativeControls
         shouldPlay={false}
         onFullscreenUpdate={(event) => {
+          if (event.fullscreenUpdate === VideoFullscreenUpdate.PLAYER_WILL_PRESENT) {
+            lockFullscreenOrientation();
+          }
           if (event.fullscreenUpdate === VideoFullscreenUpdate.PLAYER_DID_DISMISS) {
-            closeFullscreen();
+            unlockFullscreenOrientation();
           }
         }}
       />
-      <Pressable style={styles.videoFullscreenButton} onPress={openFullscreen}>
-        <Text style={styles.videoFullscreenText}>Во весь экран</Text>
-      </Pressable>
     </View>
   );
 }
@@ -1148,7 +1491,11 @@ type ProfileProps = {
   activeSection: ProfileSection;
   profile: Profile | null;
   profileForm: ProfileForm;
+  phoneCountry: typeof defaultPhoneCountry;
+  phoneCountryMenuOpen: boolean;
   profileEditForm: { full_name: string; telegram: string; city: string };
+  profilePhoto: ImagePicker.ImagePickerAsset | null;
+  removeProfilePhoto: boolean;
   carForm: CarForm;
   carPhotos: ImagePicker.ImagePickerAsset[];
   applications: Application[];
@@ -1162,7 +1509,11 @@ type ProfileProps = {
   onSectionChange: (section: ProfileSection) => void;
   onAuthModeChange: (mode: "login" | "register") => void;
   onProfileChange: (name: keyof ProfileForm, value: string) => void;
+  onPhoneCountryChange: (country: typeof defaultPhoneCountry) => void;
+  onTogglePhoneCountryMenu: () => void;
   onProfileEditChange: (name: "full_name" | "telegram" | "city", value: string) => void;
+  onPickProfilePhoto: () => void;
+  onRemoveProfilePhoto: () => void;
   onCarChange: (name: keyof CarForm, value: string) => void;
   onSubmitAuth: () => void;
   onPickCarPhotos: () => void;
@@ -1182,7 +1533,11 @@ function ProfileScreen({
   activeSection,
   profile,
   profileForm,
+  phoneCountry,
+  phoneCountryMenuOpen,
   profileEditForm,
+  profilePhoto,
+  removeProfilePhoto,
   carForm,
   carPhotos,
   applications,
@@ -1196,7 +1551,11 @@ function ProfileScreen({
   onSectionChange,
   onAuthModeChange,
   onProfileChange,
+  onPhoneCountryChange,
+  onTogglePhoneCountryMenu,
   onProfileEditChange,
+  onPickProfilePhoto,
+  onRemoveProfilePhoto,
   onCarChange,
   onSubmitAuth,
   onPickCarPhotos,
@@ -1234,7 +1593,14 @@ function ProfileScreen({
           {authMode === "register" && (
             <Field label="Имя" value={profileForm.full_name} onChangeText={(value) => onProfileChange("full_name", value)} />
           )}
-          <PhoneField value={profileForm.phone_digits} onChangeText={(value) => onProfileChange("phone_digits", value)} />
+          <PhoneField
+            country={phoneCountry}
+            menuOpen={phoneCountryMenuOpen}
+            value={profileForm.phone_digits}
+            onChangeText={(value) => onProfileChange("phone_digits", value)}
+            onCountryChange={onPhoneCountryChange}
+            onToggleMenu={onTogglePhoneCountryMenu}
+          />
           <Field label="Пароль" value={profileForm.password} secureTextEntry onChangeText={(value) => onProfileChange("password", value)} />
           {authMode === "register" && (
             <Field
@@ -1281,6 +1647,13 @@ function ProfileScreen({
               </View>
               {editingProfile ? (
                 <View style={styles.formBlock}>
+                  <ProfilePhotoEditor
+                    profile={profile}
+                    selectedPhoto={profilePhoto}
+                    removePhoto={removeProfilePhoto}
+                    onPickPhoto={onPickProfilePhoto}
+                    onRemovePhoto={onRemoveProfilePhoto}
+                  />
                   <Field label="Имя" value={profileEditForm.full_name} onChangeText={(value) => onProfileEditChange("full_name", value)} />
                   <Field label="Telegram" value={profileEditForm.telegram} onChangeText={(value) => onProfileEditChange("telegram", value)} />
                   <Field label="Город" value={profileEditForm.city} onChangeText={(value) => onProfileEditChange("city", value)} />
@@ -1290,6 +1663,19 @@ function ProfileScreen({
                 </View>
               ) : (
                 <View style={styles.dataCard}>
+                  <View style={styles.profilePhotoPreviewRow}>
+                    {profile.photo ? (
+                      <Image source={{ uri: mediaUrl(profile.photo) ?? "" }} style={styles.profilePhotoPreview} />
+                    ) : (
+                      <View style={styles.profilePhotoEmpty}>
+                        <Text style={styles.profilePhotoEmptyText}>{profile.full_name.slice(0, 1).toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <View style={styles.profilePhotoPreviewText}>
+                      <Text style={styles.dataLabel}>Фото профиля</Text>
+                      <Text style={styles.dataValue}>{profile.photo ? "Загружено" : "Не загружено"}</Text>
+                    </View>
+                  </View>
                   <DataRow label="Имя" value={profile.full_name} />
                   <DataRow label="Телефон" value={profile.phone} />
                   <DataRow label="Telegram" value={profile.telegram || "Не указан"} />
@@ -1329,15 +1715,14 @@ function ProfileScreen({
                 <View style={styles.formBlock}>
                   <Text style={styles.formTitle}>{editingCarId ? "Редактировать машину" : "Новая машина"}</Text>
                   <View style={styles.row}>
-                    <Field label="Марка" value={carForm.make} onChangeText={(value) => onCarChange("make", value)} half />
-                    <Field label="Модель" value={carForm.model} onChangeText={(value) => onCarChange("model", value)} half />
+                    <Field label="Марка" value={carForm.make} placeholder="BMW" onChangeText={(value) => onCarChange("make", value)} half />
+                    <Field label="Модель" value={carForm.model} placeholder="M5 Competition" onChangeText={(value) => onCarChange("model", value)} half />
                   </View>
                   <View style={styles.row}>
-                    <Field label="Год" value={carForm.year} keyboardType="number-pad" onChangeText={(value) => onCarChange("year", value)} half />
-                    <Field label="Мотор" value={carForm.engine} onChangeText={(value) => onCarChange("engine", value)} half />
+                    <Field label="Год" value={carForm.year} placeholder="2020" keyboardType="number-pad" onChangeText={(value) => onCarChange("year", value)} half />
+                    <Field label="Мотор" value={carForm.engine} placeholder="4.4 V8 Twin Turbo" onChangeText={(value) => onCarChange("engine", value)} half />
                   </View>
-                  <Field label="Состояние" value={carForm.condition} multiline onChangeText={(value) => onCarChange("condition", value)} />
-                  <Field label="Тюнинг и особенности" value={carForm.tuning_details} multiline onChangeText={(value) => onCarChange("tuning_details", value)} />
+                  <Field label="Тюнинг и особенности" value={carForm.tuning_details} placeholder="Например: Stage 2, выхлоп, диски, аэродинамика" multiline onChangeText={(value) => onCarChange("tuning_details", value)} />
                   <Pressable style={styles.photoButton} onPress={onPickCarPhotos}>
                     <Text style={styles.photoButtonText}>
                       {carPhotos.length > 0 ? `Фото выбрано: ${carPhotos.length}/5` : "Выбрать до 5 фото"}
@@ -1414,7 +1799,7 @@ function ProfileCarCard({
       <View style={styles.profileCarBody}>
         <Text style={styles.carTitle}>{car.make} {car.model}</Text>
         <Text style={styles.carMeta}>{car.year} · {car.engine}</Text>
-        <Text style={styles.carDescription}>{car.condition}</Text>
+        {!!car.tuning_details && <Text style={styles.carDescription}>{car.tuning_details}</Text>}
         {gallery.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carGallery}>
             {gallery.map((photo) => (
@@ -1430,6 +1815,44 @@ function ProfileCarCard({
             <Text style={styles.carDeleteText}>Удалить</Text>
           </Pressable>
         </View>
+      </View>
+    </View>
+  );
+}
+
+function ProfilePhotoEditor({
+  profile,
+  selectedPhoto,
+  removePhoto,
+  onPickPhoto,
+  onRemovePhoto,
+}: {
+  profile: Profile;
+  selectedPhoto: ImagePicker.ImagePickerAsset | null;
+  removePhoto: boolean;
+  onPickPhoto: () => void;
+  onRemovePhoto: () => void;
+}) {
+  const previewUri = selectedPhoto?.uri || (!removePhoto ? mediaUrl(profile.photo) : undefined);
+
+  return (
+    <View style={styles.profilePhotoEditor}>
+      {previewUri ? (
+        <Image source={{ uri: previewUri }} style={styles.profilePhotoLarge} />
+      ) : (
+        <View style={styles.profilePhotoLargeEmpty}>
+          <Text style={styles.profilePhotoLargeText}>{profile.full_name.slice(0, 1).toUpperCase()}</Text>
+        </View>
+      )}
+      <View style={styles.profilePhotoActions}>
+        <Pressable style={styles.smallBlackButton} onPress={onPickPhoto}>
+          <Text style={styles.smallBlackButtonText}>{previewUri ? "Заменить фото" : "Загрузить фото"}</Text>
+        </Pressable>
+        {previewUri && (
+          <Pressable style={styles.profilePhotoDeleteButton} onPress={onRemovePhoto}>
+            <Text style={styles.profilePhotoDeleteText}>Удалить фото</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -1499,19 +1922,21 @@ type FieldProps = {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
+  placeholder?: string;
   half?: boolean;
   multiline?: boolean;
   secureTextEntry?: boolean;
   keyboardType?: "default" | "phone-pad" | "number-pad";
 };
 
-function Field({ label, value, onChangeText, half, multiline, secureTextEntry, keyboardType = "default" }: FieldProps) {
+function Field({ label, value, onChangeText, placeholder, half, multiline, secureTextEntry, keyboardType = "default" }: FieldProps) {
   return (
     <View style={[styles.field, half && styles.fieldHalf]}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
+        placeholder={placeholder}
         keyboardType={keyboardType}
         secureTextEntry={secureTextEntry}
         multiline={multiline}
@@ -1522,22 +1947,60 @@ function Field({ label, value, onChangeText, half, multiline, secureTextEntry, k
   );
 }
 
-function PhoneField({ value, onChangeText }: { value: string; onChangeText: (value: string) => void }) {
+function PhoneField({
+  country,
+  menuOpen,
+  value,
+  onChangeText,
+  onCountryChange,
+  onToggleMenu,
+}: {
+  country: typeof defaultPhoneCountry;
+  menuOpen: boolean;
+  value: string;
+  onChangeText: (value: string) => void;
+  onCountryChange: (country: typeof defaultPhoneCountry) => void;
+  onToggleMenu: () => void;
+}) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>Телефон</Text>
       <View style={styles.phoneInputWrap}>
-        <Text style={styles.phonePrefix}>+998</Text>
+        <Pressable style={styles.countryButton} onPress={onToggleMenu}>
+          <Text style={styles.countryFlag}>{country.flag}</Text>
+          <Text style={styles.countryCode}>{country.dialCode}</Text>
+          <View style={[styles.countryChevron, menuOpen && styles.countryChevronOpen]} />
+        </Pressable>
         <TextInput
           value={value}
           onChangeText={onChangeText}
           keyboardType="number-pad"
-          maxLength={9}
-          placeholder="901234567"
+          maxLength={country.digits}
+          placeholder={country.example}
           placeholderTextColor="#8E8E98"
           style={styles.phoneInput}
         />
       </View>
+      {menuOpen && (
+        <View style={styles.countryMenu}>
+          {phoneCountries.map((item) => (
+            <Pressable
+              key={item.code}
+              style={[styles.countryMenuItem, item.code === country.code && styles.countryMenuItemActive]}
+              onPress={() => onCountryChange(item)}
+            >
+              <View style={styles.countryMenuLeft}>
+                <Text style={styles.countryMenuFlag}>{item.flag}</Text>
+                <View>
+                  <Text style={styles.countryMenuName}>{item.name}</Text>
+                  <Text style={styles.countryMenuFormat}>{item.dialCode} · {item.digits} цифр</Text>
+                </View>
+              </View>
+              <Text style={styles.countryMenuCode}>{item.dialCode}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -1823,6 +2286,80 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     textAlign: "right",
   },
+  profilePhotoPreviewRow: {
+    minHeight: 78,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EFEFF2",
+  },
+  profilePhotoPreview: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    backgroundColor: "#111114",
+  },
+  profilePhotoEmpty: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    backgroundColor: "#111114",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profilePhotoEmptyText: {
+    color: "#E50914",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  profilePhotoPreviewText: {
+    flex: 1,
+  },
+  profilePhotoEditor: {
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  profilePhotoLarge: {
+    width: 112,
+    height: 112,
+    borderRadius: 8,
+    backgroundColor: "#111114",
+  },
+  profilePhotoLargeEmpty: {
+    width: 112,
+    height: 112,
+    borderRadius: 8,
+    backgroundColor: "#111114",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profilePhotoLargeText: {
+    color: "#E50914",
+    fontSize: 42,
+    fontWeight: "900",
+  },
+  profilePhotoActions: {
+    flexDirection: "row",
+    gap: 10,
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+  profilePhotoDeleteButton: {
+    minHeight: 38,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFE0E0",
+    paddingHorizontal: 12,
+  },
+  profilePhotoDeleteText: {
+    color: "#C4000B",
+    fontSize: 13,
+    fontWeight: "900",
+  },
   festivalCard: {
     borderRadius: 8,
     backgroundColor: "#FFFFFF",
@@ -2067,21 +2604,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-  videoFullscreenButton: {
-    position: "absolute",
-    left: 10,
-    bottom: 10,
-    minHeight: 34,
-    borderRadius: 8,
-    backgroundColor: "rgba(229,9,20,0.94)",
-    justifyContent: "center",
-    paddingHorizontal: 11,
-  },
-  videoFullscreenText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "900",
-  },
   mediaTypeBadge: {
     position: "absolute",
     top: 10,
@@ -2110,6 +2632,151 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginTop: 7,
+  },
+  winnerCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E4E4E8",
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+    marginBottom: 12,
+  },
+  winnerImage: {
+    width: "100%",
+    height: 170,
+    backgroundColor: "#111114",
+  },
+  winnerImageEmpty: {
+    width: "100%",
+    height: 96,
+    backgroundColor: "#111114",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  winnerPlace: {
+    color: "#E50914",
+    fontSize: 34,
+    fontWeight: "900",
+  },
+  winnerBody: {
+    padding: 14,
+  },
+  winnerBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 8,
+    backgroundColor: "#FFF1F2",
+    color: "#E50914",
+    fontSize: 12,
+    fontWeight: "900",
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  winnerTitle: {
+    color: "#111114",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  winnerMeta: {
+    color: "#686872",
+    fontSize: 14,
+    marginTop: 5,
+  },
+  winnerText: {
+    color: "#5D5D66",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+  },
+  commentForm: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E4E4E8",
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    marginBottom: 14,
+  },
+  commentInput: {
+    minHeight: 86,
+    color: "#111114",
+    fontSize: 15,
+    lineHeight: 21,
+    textAlignVertical: "top",
+  },
+  commentsEmpty: {
+    color: "#6D6D76",
+    fontSize: 14,
+    marginTop: 4,
+  },
+  commentsList: {
+    gap: 10,
+  },
+  commentCard: {
+    flexDirection: "row",
+    gap: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E4E4E8",
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+  },
+  commentAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: "#111114",
+  },
+  commentAvatarEmpty: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: "#111114",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  commentAvatarText: {
+    color: "#E50914",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  commentBody: {
+    flex: 1,
+  },
+  commentTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  commentInfo: {
+    flex: 1,
+  },
+  commentName: {
+    color: "#111114",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  commentDate: {
+    color: "#8A8A94",
+    fontSize: 12,
+    marginTop: 3,
+  },
+  commentDeleteButton: {
+    minHeight: 30,
+    borderRadius: 8,
+    backgroundColor: "#FFE0E0",
+    justifyContent: "center",
+    paddingHorizontal: 9,
+  },
+  commentDeleteText: {
+    color: "#C4000B",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  commentText: {
+    color: "#4B4B54",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 9,
   },
   dropdownButton: {
     minHeight: 64,
@@ -2253,16 +2920,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
     overflow: "hidden",
   },
-  phonePrefix: {
+  countryButton: {
     alignSelf: "stretch",
-    minWidth: 64,
-    textAlign: "center",
-    textAlignVertical: "center",
-    color: "#FFFFFF",
+    minWidth: 124,
     backgroundColor: "#111114",
-    fontSize: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    paddingHorizontal: 10,
+  },
+  countryFlag: {
+    fontSize: 18,
+    lineHeight: 22,
+  },
+  countryCode: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "900",
-    paddingTop: Platform.select({ ios: 14, android: 0, default: 14 }),
+  },
+  countryChevron: {
+    width: 9,
+    height: 9,
+    borderRightWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: "#E50914",
+    transform: [{ rotate: "45deg" }],
+    marginLeft: 2,
+    marginTop: -4,
+  },
+  countryChevronOpen: {
+    transform: [{ rotate: "225deg" }],
+    marginTop: 4,
   },
   phoneInput: {
     flex: 1,
@@ -2270,6 +2959,53 @@ const styles = StyleSheet.create({
     color: "#111114",
     fontSize: 16,
     paddingHorizontal: 13,
+  },
+  countryMenu: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E4E4E8",
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+    marginTop: 8,
+  },
+  countryMenuItem: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EFEFF2",
+  },
+  countryMenuItemActive: {
+    backgroundColor: "#FFF1F2",
+  },
+  countryMenuLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  countryMenuFlag: {
+    fontSize: 24,
+    lineHeight: 28,
+  },
+  countryMenuName: {
+    color: "#111114",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  countryMenuFormat: {
+    color: "#6D6D76",
+    fontSize: 12,
+    marginTop: 3,
+  },
+  countryMenuCode: {
+    color: "#E50914",
+    fontSize: 13,
+    fontWeight: "900",
   },
   formBlock: {
     borderRadius: 8,

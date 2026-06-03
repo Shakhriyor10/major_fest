@@ -5,8 +5,10 @@ from .models import (
     ApplicationPhoto,
     Festival,
     FestivalApplication,
+    FestivalComment,
     FestivalCoverSlide,
     FestivalMedia,
+    FestivalWinner,
     ParticipantCar,
     ParticipantCarPhoto,
     ParticipantProfile,
@@ -31,10 +33,28 @@ class FestivalCoverSlideSerializer(serializers.ModelSerializer):
         fields = ["id", "image", "title", "order", "created_at"]
 
 
+class FestivalWinnerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FestivalWinner
+        fields = ["id", "place", "title", "participant_name", "car_name", "description", "image", "is_published", "created_at"]
+
+
+class FestivalCommentSerializer(serializers.ModelSerializer):
+    participant_name = serializers.CharField(source="participant.full_name", read_only=True)
+    participant_photo = serializers.ImageField(source="participant.photo", read_only=True)
+
+    class Meta:
+        model = FestivalComment
+        fields = ["id", "festival", "participant", "participant_name", "participant_photo", "text", "created_at"]
+        read_only_fields = ["created_at", "participant_name", "participant_photo"]
+
+
 class FestivalSerializer(serializers.ModelSerializer):
     applications_count = serializers.IntegerField(read_only=True)
     cover_slides = FestivalCoverSlideSerializer(many=True, read_only=True)
     media_items = FestivalMediaSerializer(many=True, read_only=True)
+    winners = serializers.SerializerMethodField()
+    comments = FestivalCommentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Festival
@@ -53,8 +73,14 @@ class FestivalSerializer(serializers.ModelSerializer):
             "cover_image",
             "cover_slides",
             "media_items",
+            "winners",
+            "comments",
             "applications_count",
         ]
+
+    def get_winners(self, festival):
+        winners = festival.winners.filter(is_published=True)
+        return FestivalWinnerSerializer(winners, many=True, context=self.context).data
 
 
 class ApplicationPhotoSerializer(serializers.ModelSerializer):
@@ -105,6 +131,11 @@ class ParticipantCarSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Размер одного фото не должен превышать 50 МБ.")
         return photos
 
+    def validate_year(self, year):
+        if year < 1900 or year > 2026:
+            raise serializers.ValidationError("Год автомобиля должен быть от 1900 до 2026.")
+        return year
+
     def create(self, validated_data):
         uploaded_photos = validated_data.pop("uploaded_photos", [])
         car = ParticipantCar.objects.create(**validated_data)
@@ -131,10 +162,11 @@ class ParticipantCarSerializer(serializers.ModelSerializer):
 
 class ParticipantProfileSerializer(serializers.ModelSerializer):
     cars = ParticipantCarSerializer(many=True, read_only=True)
+    remove_photo = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = ParticipantProfile
-        fields = ["id", "full_name", "phone", "telegram", "city", "cars", "created_at"]
+        fields = ["id", "full_name", "phone", "photo", "telegram", "city", "cars", "remove_photo", "created_at"]
         read_only_fields = ["created_at"]
 
     def create(self, validated_data):
@@ -145,10 +177,17 @@ class ParticipantProfileSerializer(serializers.ModelSerializer):
         )
         return profile
 
+    def update(self, instance, validated_data):
+        remove_photo = validated_data.pop("remove_photo", False)
+        if remove_photo and instance.photo:
+            instance.photo.delete(save=False)
+            instance.photo = ""
+        return super().update(instance, validated_data)
+
 
 class AuthRegisterSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=160)
-    phone = serializers.RegexField(regex=r"^\+998\d{9}$")
+    phone = serializers.RegexField(regex=r"^\+\d{7,15}$")
     password = serializers.CharField(min_length=6, write_only=True)
     password_confirm = serializers.CharField(min_length=6, write_only=True)
 
@@ -169,7 +208,7 @@ class AuthRegisterSerializer(serializers.Serializer):
 
 
 class AuthLoginSerializer(serializers.Serializer):
-    phone = serializers.RegexField(regex=r"^\+998\d{9}$")
+    phone = serializers.RegexField(regex=r"^\+\d{7,15}$")
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
@@ -224,6 +263,16 @@ class FestivalApplicationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         festival = attrs.get("festival") or getattr(self.instance, "festival", None)
         cars = attrs.get("cars", [])
+        if festival:
+            from django.utils import timezone
+
+            now = timezone.now()
+            if festival.status in [Festival.Status.CLOSED, Festival.Status.FINISHED] or (
+                festival.end_date and festival.end_date <= now
+            ):
+                raise serializers.ValidationError({
+                    "festival": "Фестиваль уже завершен, отправка заявки закрыта."
+                })
         if not festival or not cars:
             return attrs
 

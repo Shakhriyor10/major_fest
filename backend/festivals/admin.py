@@ -5,8 +5,10 @@ from .models import (
     ApplicationPhoto,
     Festival,
     FestivalApplication,
+    FestivalComment,
     FestivalCoverSlide,
     FestivalMedia,
+    FestivalWinner,
     ParticipantCar,
     ParticipantCarPhoto,
     ParticipantProfile,
@@ -34,12 +36,24 @@ class FestivalCoverSlideInline(admin.TabularInline):
     max_num = 5
 
 
+class FestivalWinnerInline(admin.TabularInline):
+    model = FestivalWinner
+    extra = 0
+
+
+class FestivalCommentInline(admin.TabularInline):
+    model = FestivalComment
+    extra = 0
+    readonly_fields = ("participant", "text", "created_at")
+    can_delete = True
+
+
 @admin.register(Festival)
 class FestivalAdmin(admin.ModelAdmin):
     list_display = ("title", "city", "start_date", "status", "car_slots", "prize_fund")
     list_filter = ("status", "city")
     search_fields = ("title", "city", "address")
-    inlines = [FestivalCoverSlideInline, FestivalMediaInline]
+    inlines = [FestivalCoverSlideInline, FestivalMediaInline, FestivalWinnerInline, FestivalCommentInline]
 
 
 @admin.register(FestivalCoverSlide)
@@ -54,6 +68,20 @@ class FestivalMediaAdmin(admin.ModelAdmin):
     list_display = ("festival", "media_type", "title", "order", "created_at")
     list_filter = ("media_type", "festival")
     search_fields = ("festival__title", "title", "description")
+
+
+@admin.register(FestivalWinner)
+class FestivalWinnerAdmin(admin.ModelAdmin):
+    list_display = ("festival", "place", "title", "participant_name", "car_name", "is_published", "created_at")
+    list_filter = ("festival", "is_published")
+    search_fields = ("festival__title", "title", "participant_name", "car_name")
+
+
+@admin.register(FestivalComment)
+class FestivalCommentAdmin(admin.ModelAdmin):
+    list_display = ("festival", "participant", "created_at")
+    list_filter = ("festival",)
+    search_fields = ("festival__title", "participant__full_name", "text")
 
 
 @admin.register(FestivalApplication)

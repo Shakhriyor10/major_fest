@@ -7,6 +7,7 @@ from .views import (
     AuthLoginView,
     AuthRegisterView,
     FestivalApplicationViewSet,
+    FestivalCommentViewSet,
     FestivalViewSet,
     ParticipantCarViewSet,
     ParticipantProfileViewSet,
@@ -15,6 +16,7 @@ from .views import (
 router = DefaultRouter()
 router.register("festivals", FestivalViewSet, basename="festival")
 router.register("applications", FestivalApplicationViewSet, basename="application")
+router.register("comments", FestivalCommentViewSet, basename="comment")
 router.register("profiles", ParticipantProfileViewSet, basename="profile")
 router.register("cars", ParticipantCarViewSet, basename="car")
 
