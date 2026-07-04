@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Вход - Samarkand Fest</title>
+    <link rel="stylesheet" href="/web/styles.css" />
+  </head>
+  <body data-page="auth">
+    <div class="site-bg" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="/web/index.html" aria-label="Samarkand Fest">
+        <span class="brand-mark"><img src="/web/assets/logo_2.png" alt="" /></span>
+        <span>
+          <strong>Samarkand Fest</strong>
+          <small>AUTOMOTIVE FESTIVAL</small>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Главная навигация">
+        <a href="/web/index.html#festival">Фестиваль</a>
+        <a href="/web/index.html#news">Новости</a>
+        <a href="/web/profile.html">Профиль</a>
+      </nav>
+      <a class="nav-action" href="/web/profile.html">
+        <span class="icon" data-icon="user"></span>
+        <span>Профиль</span>
+      </a>
+    </header>
+
+    <main class="auth-page">
+      <section class="auth-hero reveal">
+        <p class="eyebrow">Driver access</p>
+        <h1>Вход в фестиваль</h1>
+        <p>Открой профиль участника, добавь автомобили в гараж и отправляй заявки на Samarkand Fest.</p>
+      </section>
+
+      <form class="auth-card reveal" id="authForm">
+        <div class="segmented">
+          <button type="button" class="active" data-auth-mode="login">Вход</button>
+          <button type="button" data-auth-mode="register">Регистрация</button>
+        </div>
+        <label data-register-only>
+          Имя
+          <input name="full_name" placeholder="Шахриёр" />
+        </label>
+        <label>
+          Телефон
+          <div class="phone-field">
+            <select name="country_code" aria-label="Код страны">
+              <option value="+998" data-phone-length="9" data-placeholder="90 123 45 67" selected>🇺🇿 +998</option>
+              <option value="+7" data-phone-length="10" data-placeholder="912 345 67 89">🇷🇺 +7</option>
+              <option value="+992" data-phone-length="9" data-placeholder="92 123 45 67">🇹🇯 +992</option>
+              <option value="+996" data-phone-length="9" data-placeholder="700 123 456">🇰🇬 +996</option>
+              <option value="+993" data-phone-length="8" data-placeholder="65 123456">🇹🇲 +993</option>
+              <option value="+7" data-phone-length="10" data-placeholder="701 234 5678">🇰🇿 +7</option>
+              <option value="+90" data-phone-length="10" data-placeholder="532 123 45 67">🇹🇷 +90</option>
+              <option value="+971" data-phone-length="9" data-placeholder="50 123 4567">🇦🇪 +971</option>
+              <option value="+93" data-phone-length="9" data-placeholder="70 123 4567">🇦🇫 +93</option>
+              <option value="+86" data-phone-length="11" data-placeholder="138 0013 8000">🇨🇳 +86</option>
+              <option value="+92" data-phone-length="10" data-placeholder="300 1234567">🇵🇰 +92</option>
+              <option value="+1" data-phone-length="10" data-placeholder="202 555 0147">🇺🇸 +1</option>
+              <option value="+44" data-phone-length="10" data-placeholder="7400 123456">🇬🇧 +44</option>
+            </select>
+            <input name="phone_number" inputmode="numeric" autocomplete="tel-national" placeholder="90 123 45 67" maxlength="9" required />
+          </div>
+        </label>
+        <label>
+          Пароль
+          <input name="password" type="password" placeholder="Минимум 6 символов" required />
+        </label>
+        <label data-register-only>
+          Повтор пароля
+          <input name="password_confirm" type="password" placeholder="Еще раз пароль" />
+        </label>
+        <button class="primary-button" type="submit" id="authSubmit">
+          <span class="icon" data-icon="user"></span>
+          <span>Войти</span>
+        </button>
+        <p class="form-message" id="authMessage"></p>
+      </form>
+    </main>
+
+    <div class="toast" id="toast"></div>
+    <script src="/web/app.js"></script>
+  </body>
+</html>

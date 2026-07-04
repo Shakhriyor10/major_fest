@@ -1,10 +1,14 @@
-from django.db.models import Count
+from django.contrib.auth import authenticate, get_user_model
+from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
 from rest_framework import mixins, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import AppSettings, Festival, FestivalApplication, FestivalComment, ParticipantCar, ParticipantProfile
 from .serializers import (
+    AdminFestivalApplicationSerializer,
     AppSettingsSerializer,
     FestivalApplicationSerializer,
     FestivalSerializer,
@@ -14,6 +18,133 @@ from .serializers import (
     ParticipantCarSerializer,
     ParticipantProfileSerializer,
 )
+
+
+ADMIN_TOKEN_MAX_AGE = 60 * 60 * 12
+admin_signer = TimestampSigner(salt="major-fest-admin")
+
+
+def get_admin_user(request):
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        return None
+    token = header.removeprefix("Bearer ").strip()
+    try:
+        value = admin_signer.unsign(token, max_age=ADMIN_TOKEN_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
+    if not value.startswith("admin:"):
+        return None
+    user_id = value.split(":", 1)[1]
+    try:
+        user = get_user_model().objects.get(id=user_id, is_active=True)
+    except get_user_model().DoesNotExist:
+        return None
+    if not user.is_staff:
+        return None
+    return user
+
+
+def require_admin(request):
+    user = get_admin_user(request)
+    if user is None:
+        return None, Response({"detail": "Нужен вход администратора."}, status=status.HTTP_401_UNAUTHORIZED)
+    return user, None
+
+
+class AdminLoginView(APIView):
+    def post(self, request):
+        username = request.data.get("username", "")
+        password = request.data.get("password", "")
+        user = authenticate(request, username=username, password=password)
+        if user is None or not user.is_active or not user.is_staff:
+            return Response({"detail": "Неверный логин или пароль администратора."}, status=status.HTTP_400_BAD_REQUEST)
+        token = admin_signer.sign(f"admin:{user.id}")
+        return Response({
+            "token": token,
+            "username": user.get_username(),
+            "expires_in": ADMIN_TOKEN_MAX_AGE,
+        })
+
+
+class AdminApplicationListView(APIView):
+    def get(self, request):
+        _user, error = require_admin(request)
+        if error:
+            return error
+        queryset = (
+            FestivalApplication.objects.select_related("festival", "participant")
+            .prefetch_related("cars__photos", "participant__cars__photos", "photos")
+            .order_by("-created_at")
+        )
+        search = request.query_params.get("search", "").strip()
+        status_filter = request.query_params.get("status", "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(participant_name__icontains=search)
+                | Q(phone__icontains=search)
+                | Q(telegram__icontains=search)
+                | Q(city__icontains=search)
+                | Q(car_make__icontains=search)
+                | Q(car_model__icontains=search)
+                | Q(participant__full_name__icontains=search)
+            )
+        if status_filter:
+            if status_filter == "pending":
+                queryset = queryset.filter(status__in=[FestivalApplication.Status.NEW, FestivalApplication.Status.REVIEWING])
+            elif status_filter in [FestivalApplication.Status.APPROVED, FestivalApplication.Status.REJECTED]:
+                queryset = queryset.filter(status=status_filter)
+        serializer = AdminFestivalApplicationSerializer(queryset, many=True, context={"request": request})
+        return Response(serializer.data)
+
+
+class AdminApplicationDetailView(APIView):
+    def get(self, request, pk):
+        _user, error = require_admin(request)
+        if error:
+            return error
+        application = get_object_or_404(
+            FestivalApplication.objects.select_related("festival", "participant")
+            .prefetch_related("cars__photos", "participant__cars__photos", "photos"),
+            pk=pk,
+        )
+        return Response(AdminFestivalApplicationSerializer(application, context={"request": request}).data)
+
+    def patch(self, request, pk):
+        _user, error = require_admin(request)
+        if error:
+            return error
+        application = get_object_or_404(FestivalApplication, pk=pk)
+        new_status = request.data.get("status")
+        moderator_note = request.data.get("moderator_note")
+        allowed_statuses = {choice[0] for choice in FestivalApplication.Status.choices}
+        if new_status and new_status not in allowed_statuses:
+            return Response({"status": "Неверный статус заявки."}, status=status.HTTP_400_BAD_REQUEST)
+        if new_status:
+            application.status = new_status
+        if moderator_note is not None:
+            application.moderator_note = moderator_note
+        application.save(update_fields=["status", "moderator_note", "updated_at"])
+        application = (
+            FestivalApplication.objects.select_related("festival", "participant")
+            .prefetch_related("cars__photos", "participant__cars__photos", "photos")
+            .get(pk=application.pk)
+        )
+        return Response(AdminFestivalApplicationSerializer(application, context={"request": request}).data)
+
+
+class AdminProfilePasswordView(APIView):
+    def post(self, request, pk):
+        _user, error = require_admin(request)
+        if error:
+            return error
+        password = request.data.get("password", "")
+        if len(password) < 6:
+            return Response({"password": "Пароль должен быть минимум 6 символов."}, status=status.HTTP_400_BAD_REQUEST)
+        profile = get_object_or_404(ParticipantProfile, pk=pk)
+        profile.set_password(password)
+        profile.save(update_fields=["password_hash"])
+        return Response({"detail": "Пароль пользователя изменен."})
 
 
 class AppSettingsView(APIView):

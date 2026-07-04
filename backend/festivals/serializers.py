@@ -301,3 +301,11 @@ class FestivalApplicationSerializer(serializers.ModelSerializer):
         for photo in uploaded_photos:
             ApplicationPhoto.objects.create(application=application, image=photo)
         return application
+
+
+class AdminFestivalApplicationSerializer(FestivalApplicationSerializer):
+    participant_detail = ParticipantProfileSerializer(source="participant", read_only=True)
+
+    class Meta(FestivalApplicationSerializer.Meta):
+        fields = FestivalApplicationSerializer.Meta.fields + ["participant_detail"]
+        read_only_fields = ["created_at"]

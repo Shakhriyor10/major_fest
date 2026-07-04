@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Админ заявки - Samarkand Fest</title>
+    <link rel="stylesheet" href="/web/styles.css?v=6" />
+  </head>
+  <body data-page="admin">
+    <div class="site-bg" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="/web/index.html" aria-label="Samarkand Fest">
+        <span class="brand-mark"><img src="/web/assets/logo_2.png" alt="" /></span>
+        <span>
+          <strong>Samarkand Fest</strong>
+          <small>AUTOMOTIVE FESTIVAL</small>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Главная навигация">
+        <a href="/web/index.html#festival">Фестиваль</a>
+        <a href="/web/index.html#news">Новости</a>
+        <a href="/web/profile.html">Профиль</a>
+      </nav>
+      <a class="nav-action" href="/web/index.html">
+        <span class="icon" data-icon="garage"></span>
+        <span>На сайт</span>
+      </a>
+    </header>
+
+    <main class="admin-page">
+      <section class="admin-hero reveal">
+        <p class="eyebrow">Applications</p>
+        <h1>Заявки фестиваля</h1>
+        <p>Единая панель для просмотра участников, автомобилей и статусов модерации.</p>
+      </section>
+
+      <form class="admin-login-card reveal" id="adminLoginForm">
+        <div class="panel-head">
+          <div>
+            <h3>Вход администратора</h3>
+            <p class="muted">Используй логин и пароль от Django admin.</p>
+          </div>
+          <span class="icon-badge" data-icon="shield"></span>
+        </div>
+        <label>
+          Логин
+          <input name="username" autocomplete="username" required />
+        </label>
+        <label>
+          Пароль
+          <input name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="primary-button" type="submit">
+          <span class="icon" data-icon="user"></span>
+          <span>Войти</span>
+        </button>
+        <p class="form-message" id="adminLoginMessage"></p>
+      </form>
+
+      <div id="adminPanel" hidden>
+        <section class="admin-summary reveal" id="adminSummary">
+          <article class="admin-stat">
+            <small>Всего</small>
+            <strong id="adminTotal">0</strong>
+          </article>
+          <article class="admin-stat admin-pending">
+            <small>В ожидании</small>
+            <strong id="adminPending">0</strong>
+          </article>
+          <article class="admin-stat admin-approved">
+            <small>Принятые</small>
+            <strong id="adminApproved">0</strong>
+          </article>
+          <article class="admin-stat admin-rejected">
+            <small>Не принятые</small>
+            <strong id="adminRejected">0</strong>
+          </article>
+        </section>
+
+        <section class="admin-toolbar reveal">
+          <div class="admin-filters" id="adminFilters">
+            <button class="active" type="button" data-admin-filter="all">Все</button>
+            <button type="button" data-admin-filter="pending">В ожидании</button>
+            <button type="button" data-admin-filter="approved">Принятые</button>
+            <button type="button" data-admin-filter="rejected">Не принятые</button>
+          </div>
+          <input id="adminSearch" type="search" placeholder="Поиск по имени, телефону, авто" />
+        </section>
+
+        <section class="admin-applications reveal" id="adminApplications">
+          <article class="empty-card">
+            <span class="icon-badge" data-icon="ticket"></span>
+            <p>Заявки загружаются...</p>
+          </article>
+        </section>
+      </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+    <div class="modal" id="adminDetailModal" hidden>
+      <div class="modal-panel admin-detail-panel">
+        <div class="panel-head">
+          <div>
+            <h3 id="adminDetailTitle">Заявка</h3>
+            <p class="muted" id="adminDetailSubtitle"></p>
+          </div>
+          <button class="icon-only" id="adminDetailClose" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <div id="adminDetailContent"></div>
+      </div>
+    </div>
+    <script src="/web/app.js?v=6"></script>
+  </body>
+</html>

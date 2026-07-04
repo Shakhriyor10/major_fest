@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Samarkand Fest</title>
+    <link rel="stylesheet" href="/web/styles.css" />
+  </head>
+  <body data-page="home">
+    <div class="site-bg" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="/web/index.html" aria-label="Samarkand Fest">
+        <span class="brand-mark"><img src="/web/assets/logo_2.png" alt="" /></span>
+        <span>
+          <strong>Samarkand Fest</strong>
+          <small>AUTOMOTIVE FESTIVAL</small>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Главная навигация">
+        <a href="#festival">Фестиваль</a>
+        <a href="#apply">Заявка</a>
+        <a href="#news">Новости</a>
+        <a href="/web/profile.html">Профиль</a>
+      </nav>
+      <a class="nav-action" id="authOpenButton" href="/web/auth.html">
+        <span class="icon" data-icon="user"></span>
+        <span>Войти</span>
+      </a>
+    </header>
+
+    <main id="festivalDetailPage">
+      <section class="hero-festival" id="festival">
+        <div class="hero-carousel" aria-label="Фото фестиваля">
+          <div class="hero-loading" id="heroLoader" aria-hidden="true"></div>
+          <img id="heroImage" alt="Samarkand Fest" />
+          <div class="carousel-dots" id="carouselDots" aria-label="Слайды"></div>
+        </div>
+
+        <div class="hero-copy reveal">
+          <h1 id="heroTitle">Samarkand Fest</h1>
+          <p id="heroDescription">Фестиваль автомобилей, драйва и лучших проектов города. Выбирай авто из профиля и отправляй заявку за пару кликов.</p>
+          <div class="hero-actions">
+            <a class="primary-button magnetic" href="#apply">
+              <span class="icon" data-icon="send"></span>
+              <span>Подать заявку</span>
+            </a>
+            <a class="glass-button magnetic" href="/web/profile.html">
+              <span class="icon" data-icon="garage"></span>
+              <span>Мой гараж</span>
+            </a>
+          </div>
+        </div>
+
+        <aside class="countdown-panel reveal">
+          <span>До старта</span>
+          <div class="countdown" id="detailCountdown">
+            <b>00</b><b>00</b><b>00</b><b>00</b>
+          </div>
+          <small>дни / часы / минуты / секунды</small>
+        </aside>
+      </section>
+
+      <section class="quick-stats" id="festivalStats"></section>
+
+      <section class="content-section split-section" id="apply">
+        <div class="section-copy reveal">
+          <h2>Выбор авто из профиля</h2>
+          <p class="muted">Авторизуйся, добавь автомобиль в гараж и выбери его для участия. Все заявки сохраняются в профиле.</p>
+        </div>
+        <form class="apply-panel reveal" id="applyForm">
+          <div class="panel-head">
+            <h3>Автомобиль для фестиваля</h3>
+            <span class="icon-badge" data-icon="spark"></span>
+          </div>
+          <div class="selectable-cars" id="selectableCars"></div>
+          <button class="primary-button" type="submit">
+            <span class="icon" data-icon="send"></span>
+            <span>Отправить заявку</span>
+          </button>
+          <p class="form-message" id="applyMessage"></p>
+        </form>
+      </section>
+
+      <section class="content-section" id="news">
+        <div class="section-title-row reveal">
+          <div>
+            <h2>Новости фестиваля</h2>
+          </div>
+        </div>
+        <div class="news-grid reveal" id="newsGrid"></div>
+      </section>
+
+      <section class="content-section split-section comments-section">
+        <div class="section-copy reveal">
+          <h2>Комментарии</h2>
+          <p class="muted">Обсуждение фестиваля для участников и гостей.</p>
+        </div>
+        <div class="comments-panel reveal">
+          <div class="comments" id="commentsBox"></div>
+          <form class="comment-form" id="commentForm">
+            <textarea name="text" placeholder="Оставить комментарий" required></textarea>
+            <button class="glass-button" type="submit">
+              <span class="icon" data-icon="message"></span>
+              <span>Отправить</span>
+            </button>
+            <p class="form-message" id="commentMessage"></p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast"></div>
+    <script src="/web/app.js"></script>
+  </body>
+</html>

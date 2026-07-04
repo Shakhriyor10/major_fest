@@ -131,11 +131,16 @@ function phoneDigitsWithoutCountry(phone: string, country: typeof defaultPhoneCo
     : phone.replace(/\D/g, "").slice(0, country.digits);
 }
 
-function countdownParts(dateValue: string, now: Date) {
+function countdownParts(festival: Festival, now: Date) {
+  if (isFestivalEnded(festival, now)) {
+    return { state: "ended" as const, days: "00", hours: "00", minutes: "00", seconds: "00" };
+  }
+
+  const dateValue = festival.start_date;
   const target = new Date(dateValue);
   const diff = target.getTime() - now.getTime();
   if (diff <= 0) {
-    return { started: true, days: "00", hours: "00", minutes: "00", seconds: "00" };
+    return { state: "started" as const, days: "00", hours: "00", minutes: "00", seconds: "00" };
   }
 
   const totalSeconds = Math.floor(diff / 1000);
@@ -145,7 +150,7 @@ function countdownParts(dateValue: string, now: Date) {
   const seconds = totalSeconds % 60;
 
   return {
-    started: false,
+    state: "upcoming" as const,
     days: String(days).padStart(2, "0"),
     hours: String(hours).padStart(2, "0"),
     minutes: String(minutes).padStart(2, "0"),
@@ -966,7 +971,7 @@ function FestivalCard({ festival, now, onPress }: { festival: Festival; now: Dat
     day: "numeric",
     month: "long",
   });
-  const countdown = countdownParts(festival.start_date, now);
+  const countdown = countdownParts(festival, now);
 
   return (
     <Pressable style={styles.festivalCard} onPress={onPress}>
@@ -985,7 +990,15 @@ function FestivalCard({ festival, now, onPress }: { festival: Festival; now: Dat
 }
 
 function CountdownCard({ countdown }: { countdown: ReturnType<typeof countdownParts> }) {
-  if (countdown.started) {
+  if (countdown.state === "ended") {
+    return (
+      <View style={styles.countdownCard}>
+        <Text style={styles.countdownStarted}>Фестиваль завершен</Text>
+      </View>
+    );
+  }
+
+  if (countdown.state === "started") {
     return (
       <View style={styles.countdownCard}>
         <Text style={styles.countdownStarted}>Фестиваль начался</Text>
@@ -1059,7 +1072,7 @@ function FestivalDetail({
   });
   const selectedCars = profile?.cars.filter((car) => selectedCarIds.includes(car.id)) ?? [];
   const prizeFund = formatMoney(festival.prize_fund);
-  const countdown = countdownParts(festival.start_date, now);
+  const countdown = countdownParts(festival, now);
   const ended = isFestivalEnded(festival, now);
 
   return (
@@ -1118,13 +1131,20 @@ function FestivalDetail({
             <Pressable style={styles.dropdownButton} onPress={onToggleCarsMenu}>
               <View>
                 <Text style={styles.dropdownLabel}>Автомобили для участия</Text>
-                <Text style={styles.dropdownValue}>
-                  {selectedCars.length > 0
-                    ? selectedCars.map((car) => `${car.make} ${car.model}`).join(", ")
-                    : "Выбрать из профиля"}
-                </Text>
+                <View style={styles.dropdownValueRow}>
+                  <View style={styles.dropdownCarIcon}>
+                    <View style={styles.dropdownCarBody} />
+                    <View style={[styles.dropdownCarWheel, styles.dropdownCarWheelLeft]} />
+                    <View style={[styles.dropdownCarWheel, styles.dropdownCarWheelRight]} />
+                  </View>
+                  <Text style={styles.dropdownValue}>
+                    {selectedCars.length > 0
+                      ? selectedCars.map((car) => `${car.make} ${car.model}`).join(", ")
+                      : "Выбрать из профиля"}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.dropdownArrow}>{carsMenuOpen ? "⌃" : "⌄"}</Text>
+              <View style={[styles.dropdownChevron, carsMenuOpen && styles.dropdownChevronOpen]} />
             </Pressable>
 
             {carsMenuOpen && (
@@ -1188,7 +1208,7 @@ function FestivalMediaGallery({ festival }: { festival: Festival }) {
   return (
     <View style={styles.mediaSection}>
       <View style={[styles.sectionHeaderRow, styles.mediaHeader]}>
-        <Text style={styles.sectionTitle}>Медиа</Text>
+        <Text style={styles.sectionTitle}>Новости фестиваля</Text>
         <Text style={styles.mediaCount}>{mediaItems.length}</Text>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaRail}>
@@ -2494,7 +2514,6 @@ const styles = StyleSheet.create({
   },
   detailTop: {
     backgroundColor: "#08080A",
-    paddingBottom: 18,
   },
   backButton: {
     alignSelf: "flex-start",
@@ -2797,15 +2816,60 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   dropdownValue: {
+    flex: 1,
     color: "#111114",
     fontSize: 16,
     fontWeight: "900",
-    marginTop: 5,
   },
-  dropdownArrow: {
-    color: "#E50914",
-    fontSize: 22,
-    fontWeight: "900",
+  dropdownValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginTop: 6,
+  },
+  dropdownCarIcon: {
+    width: 26,
+    height: 18,
+    position: "relative",
+  },
+  dropdownCarBody: {
+    position: "absolute",
+    left: 2,
+    right: 2,
+    top: 4,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: "#E50914",
+  },
+  dropdownCarWheel: {
+    position: "absolute",
+    bottom: 1,
+    width: 6,
+    height: 6,
+    borderRadius: 6,
+    backgroundColor: "#111114",
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
+  },
+  dropdownCarWheelLeft: {
+    left: 5,
+  },
+  dropdownCarWheelRight: {
+    right: 5,
+  },
+  dropdownChevron: {
+    width: 10,
+    height: 10,
+    borderRightWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: "#E50914",
+    transform: [{ rotate: "45deg" }],
+    marginRight: 3,
+    marginTop: -5,
+  },
+  dropdownChevronOpen: {
+    transform: [{ rotate: "225deg" }],
+    marginTop: 5,
   },
   dropdownMenu: {
     borderRadius: 8,

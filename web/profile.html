@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Профиль - Samarkand Fest</title>
+    <link rel="stylesheet" href="/web/styles.css" />
+  </head>
+  <body data-page="profile">
+    <div class="site-bg" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="/web/index.html" aria-label="Samarkand Fest">
+        <span class="brand-mark"><img src="/web/assets/logo_2.png" alt="" /></span>
+        <span>
+          <strong>Samarkand Fest</strong>
+          <small>AUTOMOTIVE FESTIVAL</small>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Главная навигация">
+        <a href="/web/index.html#festival">Фестиваль</a>
+        <a href="/web/index.html#apply">Заявка</a>
+        <a href="/web/index.html#news">Новости</a>
+      </nav>
+      <button class="nav-action" id="logoutButton" type="button" hidden>
+        <span class="icon" data-icon="logout"></span>
+        <span>Выйти</span>
+      </button>
+      <a class="nav-action" id="profileLoginButton" href="/web/auth.html">
+        <span class="icon" data-icon="user"></span>
+        <span>Войти</span>
+      </a>
+    </header>
+
+    <main class="profile-page">
+      <section class="profile-hero reveal">
+        <p class="eyebrow">Personal garage</p>
+        <h1>Профиль участника</h1>
+        <p>Личный гараж, автомобили, заявки и статусы участия в фестивале.</p>
+      </section>
+
+      <section class="locked-panel reveal" id="profileLocked">
+        <span class="icon-badge" data-icon="shield"></span>
+        <h2>Нужен вход</h2>
+        <p class="muted">Войди или зарегистрируйся, чтобы открыть профиль и добавить автомобиль.</p>
+        <a class="primary-button" href="/web/auth.html">
+          <span class="icon" data-icon="user"></span>
+          <span>Войти в профиль</span>
+        </a>
+      </section>
+
+      <section class="profile-grid" id="profileContent" hidden>
+        <div class="profile-card reveal" id="profileCard">
+          <div class="profile-top">
+            <button class="avatar-button" id="avatarEditButton" type="button" aria-label="Изменить фото профиля">
+              <img id="profilePhoto" alt="" hidden />
+              <span class="profile-avatar-fallback" id="profileAvatarFallback">U</span>
+              <span class="avatar-edit-label">Изменить</span>
+            </button>
+            <div>
+              <h3 id="profileName"></h3>
+              <p id="profilePhone"></p>
+              <p class="profile-meta" id="profileMeta"></p>
+            </div>
+          </div>
+          <button class="glass-button profile-edit-toggle" id="profileEditToggle" type="button">
+            <span class="icon" data-icon="edit"></span>
+            <span id="profileEditToggleText">Изменить данные</span>
+          </button>
+          <form class="mini-form profile-edit-form" id="profileEditForm" hidden>
+            <label>
+              Имя
+              <input name="full_name" placeholder="Имя" />
+            </label>
+            <label>
+              Телефон
+              <input name="phone" placeholder="+998901234567" />
+            </label>
+            <label>
+              Город / адрес
+              <input name="city" placeholder="Самарканд" />
+            </label>
+            <label>
+              Telegram
+              <input name="telegram" placeholder="@telegram" />
+            </label>
+            <button class="glass-button" type="submit">
+              <span class="icon" data-icon="save"></span>
+              <span>Сохранить профиль</span>
+            </button>
+          </form>
+        </div>
+
+        <form class="car-form reveal" id="carForm">
+          <div class="panel-head">
+            <h3>Добавить авто</h3>
+            <span class="icon-badge" data-icon="car"></span>
+          </div>
+          <div class="form-grid">
+            <input name="make" placeholder="Марка" required />
+            <input name="model" placeholder="Модель" required />
+            <input name="year" type="number" placeholder="Год" min="1900" max="2026" required />
+            <input name="engine" placeholder="Мотор" required />
+          </div>
+          <textarea name="condition" placeholder="Состояние машины" required></textarea>
+          <textarea name="tuning_details" placeholder="Тюнинг и особенности"></textarea>
+          <input name="uploaded_photos" type="file" accept="image/*" multiple />
+          <button class="primary-button" type="submit">
+            <span class="icon" data-icon="garage"></span>
+            <span>Добавить в гараж</span>
+          </button>
+          <p class="form-message" id="carMessage"></p>
+        </form>
+
+        <section class="garage-panel reveal">
+          <div class="section-title-row compact">
+            <div>
+              <p class="eyebrow">Garage</p>
+              <h2>Мои авто</h2>
+            </div>
+          </div>
+          <div class="garage-preview" id="garagePreview"></div>
+        </section>
+
+        <section class="applications reveal">
+          <div class="panel-head">
+            <h3>Мои заявки</h3>
+            <span class="icon-badge" data-icon="ticket"></span>
+          </div>
+          <div id="applicationsList"></div>
+        </section>
+      </section>
+    </main>
+
+    <div class="toast" id="toast"></div>
+    <div class="modal" id="avatarModal" hidden>
+      <div class="modal-panel">
+        <div class="panel-head">
+          <div>
+            <h3>Фото профиля</h3>
+            <p class="muted">Выбери область, которая будет видна в аватарке.</p>
+          </div>
+          <button class="icon-only" id="avatarModalClose" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <input id="avatarFileInput" type="file" accept="image/*" hidden />
+        <div class="avatar-cropper" id="avatarCropper">
+          <img id="avatarCropImage" alt="" />
+        </div>
+        <label>
+          Масштаб
+          <input id="avatarZoom" type="range" min="1" max="3" step="0.01" value="1" />
+        </label>
+        <div class="modal-actions">
+          <button class="glass-button" id="avatarPickButton" type="button">Выбрать фото</button>
+          <button class="glass-button" id="avatarRemoveButton" type="button">Удалить фото</button>
+          <button class="primary-button" id="avatarSaveButton" type="button">Сохранить</button>
+        </div>
+      </div>
+    </div>
+    <script src="/web/app.js"></script>
+  </body>
+</html>
