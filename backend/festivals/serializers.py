@@ -131,6 +131,14 @@ class ParticipantCarSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Размер одного фото не должен превышать 50 МБ.")
         return photos
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if self.instance is None and not attrs.get("uploaded_photos"):
+            raise serializers.ValidationError({
+                "uploaded_photos": "Добавьте хотя бы одно фото автомобиля."
+            })
+        return attrs
+
     def validate_year(self, year):
         if year < 1900 or year > 2026:
             raise serializers.ValidationError("Год автомобиля должен быть от 1900 до 2026.")

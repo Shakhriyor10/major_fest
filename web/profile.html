@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Профиль - Samarkand Fest</title>
-    <link rel="stylesheet" href="/web/styles.css" />
+    <link rel="stylesheet" href="/web/styles.css?v=11" />
   </head>
   <body data-page="profile">
     <div class="site-bg" aria-hidden="true"></div>
@@ -104,7 +104,7 @@
           </div>
           <textarea name="condition" placeholder="Состояние машины" required></textarea>
           <textarea name="tuning_details" placeholder="Тюнинг и особенности"></textarea>
-          <input name="uploaded_photos" type="file" accept="image/*" multiple />
+          <input name="uploaded_photos" type="file" accept="image/*" multiple required />
           <button class="primary-button" type="submit">
             <span class="icon" data-icon="garage"></span>
             <span>Добавить в гараж</span>
@@ -133,6 +133,24 @@
     </main>
 
     <div class="toast" id="toast"></div>
+    <div class="modal ticket-modal" id="ticketModal" hidden>
+      <div class="modal-panel ticket-panel">
+        <div class="panel-head">
+          <div>
+            <h3>Билет участника</h3>
+            <p class="muted">Сохрани билет в PDF после одобрения заявки администратором.</p>
+          </div>
+          <button class="icon-only" id="ticketModalClose" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <div class="ticket-preview" id="ticketPreview"></div>
+        <div class="modal-actions">
+          <button class="glass-button" id="ticketPrintButton" type="button">
+            <span class="icon" data-icon="save"></span>
+            <span>Скачать PDF</span>
+          </button>
+        </div>
+      </div>
+    </div>
     <div class="modal" id="avatarModal" hidden>
       <div class="modal-panel">
         <div class="panel-head">
@@ -157,6 +175,6 @@
         </div>
       </div>
     </div>
-    <script src="/web/app.js"></script>
+    <script src="/web/app.js?v=11"></script>
   </body>
 </html>

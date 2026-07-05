@@ -15,6 +15,7 @@ const state = {
   adminSearch: "",
   adminToken: localStorage.getItem(ADMIN_STORAGE_KEY) || "",
   selectedAdminApplication: null,
+  selectedTicketApplication: null,
   heroImages: [],
   heroSlide: 0,
   touchStartX: 0,
@@ -83,6 +84,15 @@ function getInitial(name = "") {
   return name.trim().charAt(0).toUpperCase() || "U";
 }
 
+function escapeText(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function formatDate(value) {
   if (!value) return "Дата уточняется";
   return new Intl.DateTimeFormat("ru-RU", {
@@ -127,7 +137,11 @@ async function adminApi(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (state.adminToken) headers.set("Authorization", `Bearer ${state.adminToken}`);
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  if (!response.ok) throw new Error(await readApiError(response));
+  if (!response.ok) {
+    const error = new Error(await readApiError(response));
+    error.status = response.status;
+    throw error;
+  }
   if (response.status === 204) return null;
   return response.json();
 }
@@ -445,6 +459,9 @@ function setAuthMode(mode) {
   $$("[data-register-only]").forEach((node) => {
     node.hidden = mode !== "register";
   });
+  $$("[data-login-only]").forEach((node) => {
+    node.hidden = mode !== "login";
+  });
   const submit = $("#authSubmit");
   const message = $("#authMessage");
   if (submit) submit.querySelector("span:last-child").textContent = mode === "register" ? "Создать профиль" : "Войти";
@@ -620,11 +637,23 @@ function renderApplications() {
   };
   list.innerHTML = state.applications.map((application) => `
     <article class="application-item application-${application.status}">
-      <strong><span class="status-dot"></span>${labels[application.status] || application.status}</strong>
-      <p>${application.cars_detail?.map((car) => `${car.make} ${car.model}`).join(", ") || "Авто не указано"}</p>
-      ${application.moderator_note ? `<small>${application.moderator_note}</small>` : ""}
+      <div class="application-item-head">
+        <strong><span class="status-dot"></span>${labels[application.status] || escapeText(application.status)}</strong>
+        <span class="application-code">${ticketApplicationId(application)}</span>
+      </div>
+      <p>${application.cars_detail?.map((car) => `${escapeText(car.make)} ${escapeText(car.model)}`).join(", ") || "Авто не указано"}</p>
+      ${application.moderator_note ? `<small>${escapeText(application.moderator_note)}</small>` : ""}
+      ${application.status === "approved" ? `
+        <div class="application-actions">
+          <button class="primary-button ticket-open-button" type="button" data-ticket-id="${application.id}">
+            <span class="icon" data-icon="ticket"></span>
+            <span>Открыть билет</span>
+          </button>
+        </div>
+      ` : ""}
     </article>
   `).join("");
+  hydrateIcons(list);
 }
 
 function applicationStatus(application) {
@@ -647,6 +676,183 @@ function applicationPhoto(application) {
   const car = application.cars_detail?.[0];
   const carPhoto = car?.main_photo || car?.photos?.[0]?.image;
   return mediaUrl(appPhoto || carPhoto) || fallbackImage();
+}
+
+function ticketApplicationId(application) {
+  return `SF-${String(application?.id || 0).padStart(5, "0")}`;
+}
+
+function applicationFestival(application) {
+  return state.festivals.find((festival) => Number(festival.id) === Number(application?.festival)) || state.selectedFestival || state.festivals[0] || {};
+}
+
+function applicationCarsText(application) {
+  return application?.cars_detail?.length
+    ? application.cars_detail.map((car) => `${car.make || ""} ${car.model || ""}`.trim()).join(", ")
+    : "Автомобиль не указан";
+}
+
+function ticketStatusLabel(application) {
+  const labels = {
+    new: "В ожидании",
+    reviewing: "На рассмотрении",
+    approved: "Одобрена",
+    rejected: "Отказ",
+  };
+  return labels[application?.status] || application?.status || "В ожидании";
+}
+
+function applicationOwnerName() {
+  return state.profile?.full_name || state.profile?.phone || "Участник фестиваля";
+}
+
+function ticketMarkup(application) {
+  const festival = applicationFestival(application);
+  const place = festival.location || festival.city || "Samarkand Touristic Centre";
+  const date = festival.start_date ? formatDate(festival.start_date) : "Дата уточняется";
+  const code = ticketApplicationId(application);
+  const status = ticketStatusLabel(application);
+  const owner = applicationOwnerName();
+  const phone = state.profile?.phone || "Телефон не указан";
+  const cars = applicationCarsText(application);
+  return `
+    <article class="festival-ticket">
+      <div class="ticket-watermark">SAMARKAND FEST</div>
+      <header class="ticket-header">
+        <div class="ticket-brand">
+          <img src="/web/assets/logo_2.png" alt="" />
+          <div>
+            <strong>Samarkand Fest</strong>
+            <span>Automotive Festival</span>
+          </div>
+        </div>
+        <div class="ticket-status">
+          <span class="status-dot"></span>
+          <strong>${escapeText(status)}</strong>
+        </div>
+      </header>
+
+      <section class="ticket-main">
+        <div>
+          <span class="ticket-label">Билет участника</span>
+          <h2>${escapeText(festival.title || "Samarkand Fest")}</h2>
+          <p>Заявка одобрена администратором. Этот билет можно сохранить в PDF и показать при регистрации на площадке.</p>
+        </div>
+        <div class="ticket-code-box">
+          <small>ID заявки</small>
+          <strong>${escapeText(code)}</strong>
+        </div>
+      </section>
+
+      <section class="ticket-grid">
+        <div class="ticket-field">
+          <small>Участник</small>
+          <strong>${escapeText(owner)}</strong>
+        </div>
+        <div class="ticket-field">
+          <small>Телефон</small>
+          <strong>${escapeText(phone)}</strong>
+        </div>
+        <div class="ticket-field">
+          <small>Автомобиль</small>
+          <strong>${escapeText(cars)}</strong>
+        </div>
+        <div class="ticket-field">
+          <small>Дата</small>
+          <strong>${escapeText(date)}</strong>
+        </div>
+        <div class="ticket-field ticket-field-wide">
+          <small>Площадка</small>
+          <strong>${escapeText(place)}</strong>
+        </div>
+        <div class="ticket-field">
+          <small>Контрольный код</small>
+          <strong>${escapeText(code)}-${String(application?.participant || state.profile?.id || 0).padStart(4, "0")}</strong>
+        </div>
+      </section>
+
+      <footer class="ticket-footer">
+        <span>Действителен только для указанной заявки и автомобиля.</span>
+        <span>${escapeText(new Date().toLocaleDateString("ru-RU"))}</span>
+      </footer>
+    </article>
+  `;
+}
+
+function ticketPrintDocument(application) {
+  const title = `${ticketApplicationId(application)} - Samarkand Fest`;
+  return `<!doctype html>
+    <html lang="ru">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>${escapeText(title)}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; padding: 28px; background: #f3f4f6; color: #111317; font-family: Arial, sans-serif; }
+          .festival-ticket { position: relative; overflow: hidden; width: min(980px, 100%); margin: 0 auto; padding: 30px; border: 1px solid #e4e6eb; border-radius: 14px; background: #fff; box-shadow: 0 18px 50px rgba(15, 18, 25, .12); }
+          .ticket-watermark { position: absolute; right: -30px; bottom: 18px; color: rgba(230, 0, 35, .06); font-size: 68px; font-weight: 900; letter-spacing: 3px; transform: rotate(-8deg); }
+          .ticket-header, .ticket-main, .ticket-grid, .ticket-footer { position: relative; z-index: 1; }
+          .ticket-header, .ticket-main, .ticket-footer, .ticket-brand, .ticket-status { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+          .ticket-brand img { width: 78px; height: 78px; object-fit: contain; }
+          .ticket-brand strong { display: block; font-size: 25px; }
+          .ticket-brand span, .ticket-label, .ticket-field small, .ticket-code-box small, .ticket-footer { color: #6b7280; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
+          .ticket-status { padding: 10px 12px; border-radius: 999px; background: #ecfdf3; color: #15803d; }
+          .status-dot { width: 11px; height: 11px; border-radius: 50%; background: #16a34a; box-shadow: 0 0 0 4px rgba(22, 163, 74, .15); }
+          .ticket-main { margin: 28px 0; padding: 24px; border: 1px solid #f0c8ce; border-radius: 12px; background: linear-gradient(135deg, #fff5f6, #fff); }
+          .ticket-main h2 { margin: 8px 0 10px; font-size: 36px; }
+          .ticket-main p { max-width: 580px; margin: 0; color: #464c57; line-height: 1.55; }
+          .ticket-code-box { min-width: 190px; padding: 18px; border-radius: 12px; background: #111317; color: #fff; text-align: center; }
+          .ticket-code-box strong { display: block; margin-top: 6px; font-size: 28px; letter-spacing: .08em; }
+          .ticket-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+          .ticket-field { padding: 16px; border: 1px solid #e4e6eb; border-radius: 10px; background: #fff; }
+          .ticket-field-wide { grid-column: span 2; }
+          .ticket-field strong { display: block; margin-top: 7px; font-size: 18px; }
+          .ticket-footer { margin-top: 22px; padding-top: 14px; border-top: 1px dashed #cfd3dc; }
+          @media print { body { padding: 0; background: #fff; } .festival-ticket { width: 100%; box-shadow: none; border-radius: 0; } }
+          @media (max-width: 680px) { body { padding: 12px; } .ticket-header, .ticket-main, .ticket-footer { align-items: flex-start; flex-direction: column; } .ticket-grid { grid-template-columns: 1fr; } .ticket-field-wide { grid-column: auto; } }
+        </style>
+      </head>
+      <body>${ticketMarkup(application)}</body>
+    </html>`;
+}
+
+function openTicket(application) {
+  state.selectedTicketApplication = application;
+  const preview = $("#ticketPreview");
+  const modal = $("#ticketModal");
+  if (!preview || !modal) return;
+  preview.innerHTML = ticketMarkup(application);
+  modal.hidden = false;
+  hydrateIcons(preview);
+}
+
+function closeTicketModal() {
+  const modal = $("#ticketModal");
+  if (modal) modal.hidden = true;
+}
+
+function handleTicketClick(event) {
+  const button = event.target.closest("[data-ticket-id]");
+  if (!button) return;
+  const application = state.applications.find((item) => Number(item.id) === Number(button.dataset.ticketId));
+  if (!application) return;
+  openTicket(application);
+}
+
+function printTicket() {
+  const application = state.selectedTicketApplication;
+  if (!application) return;
+  const popup = window.open("", "_blank", "width=1100,height=900");
+  if (!popup) {
+    toast("Разреши всплывающее окно, чтобы скачать билет в PDF.");
+    return;
+  }
+  popup.document.open();
+  popup.document.write(ticketPrintDocument(application));
+  popup.document.close();
+  popup.focus();
+  setTimeout(() => popup.print(), 350);
 }
 
 async function loadAdminApplications() {
@@ -794,21 +1000,25 @@ function carImage(car) {
   return mediaUrl(car.main_photo || car.photos?.[0]?.image) || fallbackImage();
 }
 
-function renderProfileCars(cars) {
+function renderProfileCars(cars, selectedCars = []) {
+  const selectedIds = new Set(selectedCars.map((car) => Number(car.id)));
   if (!cars.length) return `<p class="muted">В профиле пока нет добавленных машин.</p>`;
   return `
     <div class="admin-profile-cars">
-      ${cars.map((car) => `
-        <article>
+      ${cars.map((car) => {
+        const isSelected = selectedIds.has(Number(car.id));
+        return `
+        <article class="${isSelected ? "is-application-car" : ""}">
           <img src="${carImage(car)}" alt="${car.make || "Авто"}" />
           <div>
-            <strong>${car.make} ${car.model} ${car.year || ""}</strong>
+            <strong>${isSelected ? `<span class="application-car-dot" title="РњР°С€РёРЅР° СѓС‡Р°СЃС‚РІСѓРµС‚ РІ СЌС‚РѕР№ Р·Р°СЏРІРєРµ"></span>` : ""}${car.make} ${car.model} ${car.year || ""}</strong>
             <small>${car.engine || "Мотор не указан"}</small>
             <p>${car.condition || "Состояние не указано"}</p>
             ${car.tuning_details ? `<p>${car.tuning_details}</p>` : ""}
           </div>
         </article>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
   `;
 }
@@ -820,43 +1030,57 @@ function renderAdminDetail(application) {
   const status = applicationStatus(application);
   const profile = application.participant_detail;
   $("#adminDetailTitle").textContent = application.participant_name || "Заявка";
-  $("#adminDetailSubtitle").textContent = `${application.car_make} ${application.car_model} • ${status.label}`;
+  $("#adminDetailSubtitle").textContent = `${application.car_make} ${application.car_model} ${application.car_year || ""} • ${status.label}`;
   content.innerHTML = `
-    <div class="admin-detail-grid">
-      <img class="admin-detail-photo" src="${applicationPhoto(application)}" alt="${application.car_make || "Авто"}" />
-      <div class="admin-detail-info">
-        <span class="admin-status status-${status.group}"><span class="status-dot"></span>${status.label}</span>
-        <div class="admin-meta-grid">
-          <span><b>Имя</b>${application.participant_name || "Не указано"}</span>
-          <span><b>Телефон</b>${application.phone || "Не указан"}</span>
-          <span><b>Telegram</b>${application.telegram || "Не указан"}</span>
-          <span><b>Город</b>${application.city || "Не указан"}</span>
+    <div class="admin-detail-shell">
+      <aside class="admin-detail-media">
+        <img class="admin-detail-photo" src="${applicationPhoto(application)}" alt="${application.car_make || "Авто"}" />
+        <div class="admin-card-actions admin-detail-actions">
+          <button class="primary-button" type="button" data-admin-status="approved" data-application-id="${application.id}">Принять</button>
+          <button class="glass-button danger-button" type="button" data-admin-status="rejected" data-application-id="${application.id}">Отказать</button>
+          <button class="glass-button" type="button" data-admin-status="reviewing" data-application-id="${application.id}">В ожидание</button>
         </div>
-        <div class="admin-car-details">
-          <p><b>Авто заявки:</b> ${application.car_make} ${application.car_model} ${application.car_year || ""}</p>
-          <p><b>Двигатель:</b> ${application.engine || "Не указан"}</p>
-          <p><b>Состояние:</b> ${application.condition || "Не указано"}</p>
-          ${application.tuning_details ? `<p><b>Тюнинг:</b> ${application.tuning_details}</p>` : ""}
+      </aside>
+      <section class="admin-detail-main">
+        <div class="admin-detail-summary">
+          <span class="admin-status status-${status.group}"><span class="status-dot"></span>${status.label}</span>
+          <h2>${application.car_make} ${application.car_model}</h2>
+          <p>${application.participant_name || "Без имени"} • ${formatAdminDate(application.created_at)}</p>
         </div>
+        <div class="admin-detail-columns">
+          <section class="admin-detail-block">
+            <h3>Участник</h3>
+            <div class="admin-meta-list">
+              <span><b>Имя</b>${application.participant_name || "Не указано"}</span>
+              <span><b>Телефон</b>${application.phone || "Не указан"}</span>
+              <span><b>Telegram</b>${application.telegram || "Не указан"}</span>
+              <span><b>Город</b>${application.city || "Не указан"}</span>
+            </div>
+          </section>
+          <section class="admin-detail-block">
+            <h3>Авто из заявки</h3>
+            <div class="admin-meta-list">
+              <span><b>Машина</b>${application.car_make} ${application.car_model} ${application.car_year || ""}</span>
+              <span><b>Двигатель</b>${application.engine || "Не указан"}</span>
+              <span><b>Состояние</b>${application.condition || "Не указано"}</span>
+              ${application.tuning_details ? `<span><b>Тюнинг</b>${application.tuning_details}</span>` : ""}
+            </div>
+          </section>
+        </div>
+        <section class="admin-detail-block">
+          <h3>Все машины в профиле</h3>
+          ${renderProfileCars(profileCars(application), application.cars_detail || [])}
+        </section>
+        <form class="admin-password-form" id="adminPasswordForm" data-profile-id="${profile?.id || ""}">
+          <h3>Сменить пароль пользователя</h3>
+          <div class="form-grid">
+            <input name="password" type="password" placeholder="Новый пароль" minlength="6" required />
+            <button class="glass-button" type="submit">Сохранить пароль</button>
+          </div>
+          <p class="form-message" id="adminPasswordMessage"></p>
+        </form>
       </div>
     </div>
-    <div class="admin-card-actions">
-      <button class="primary-button" type="button" data-admin-status="approved" data-application-id="${application.id}">Принять</button>
-      <button class="glass-button danger-button" type="button" data-admin-status="rejected" data-application-id="${application.id}">Отказать</button>
-      <button class="glass-button" type="button" data-admin-status="reviewing" data-application-id="${application.id}">В ожидание</button>
-    </div>
-    <section class="admin-detail-section">
-      <h3>Машины в профиле пользователя</h3>
-      ${renderProfileCars(profileCars(application))}
-    </section>
-    <form class="admin-password-form" id="adminPasswordForm" data-profile-id="${profile?.id || ""}">
-      <h3>Сменить пароль пользователя</h3>
-      <div class="form-grid">
-        <input name="password" type="password" placeholder="Новый пароль" minlength="6" required />
-        <button class="glass-button" type="submit">Сохранить пароль</button>
-      </div>
-      <p class="form-message" id="adminPasswordMessage"></p>
-    </form>
   `;
   modal.hidden = false;
   hydrateIcons(content);
@@ -922,6 +1146,17 @@ async function renderAdminPage() {
     await loadAdminApplications();
     renderAdminApplications();
   } catch (error) {
+    const needsLogin = error.status === 401 || error.status === 403 || /Нужен вход|администратор|admin/i.test(error.message);
+    if (needsLogin) {
+      state.adminToken = "";
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+      $("#adminLoginForm")?.removeAttribute("hidden");
+      $("#adminPanel")?.setAttribute("hidden", "");
+      const message = $("#adminLoginMessage");
+      if (message) message.textContent = "Нужен вход администратора. Введите логин и пароль.";
+      toast("Нужен вход администратора");
+      return;
+    }
     const list = $("#adminApplications");
     if (list) {
       list.innerHTML = `
@@ -1147,12 +1382,18 @@ async function handleCarCreate(event) {
   event.preventDefault();
   if (!state.profile) return;
   const form = event.currentTarget;
+  const files = Array.from(form.uploaded_photos.files || []);
+  if (!files.length) {
+    $("#carMessage").textContent = "Добавьте хотя бы одно фото автомобиля.";
+    form.uploaded_photos.focus();
+    return;
+  }
   const body = new FormData();
   body.append("owner", state.profile.id);
   ["make", "model", "year", "engine", "condition", "tuning_details"].forEach((name) => {
     body.append(name, form[name].value);
   });
-  Array.from(form.uploaded_photos.files || []).slice(0, 5).forEach((file) => {
+  files.slice(0, 5).forEach((file) => {
     body.append("uploaded_photos", file, file.name);
   });
 
@@ -1235,6 +1476,7 @@ function bindEvents() {
   $("#profileEditForm")?.addEventListener("submit", handleProfileEdit);
   $("#carForm")?.addEventListener("submit", handleCarCreate);
   $("#garagePreview")?.addEventListener("click", handleCarDelete);
+  $("#applicationsList")?.addEventListener("click", handleTicketClick);
   $("#applyForm")?.addEventListener("submit", handleApply);
   $("#commentForm")?.addEventListener("submit", handleCommentCreate);
   $("#commentsBox")?.addEventListener("click", handleCommentDelete);
@@ -1257,6 +1499,8 @@ function bindEvents() {
   $("#adminDetailClose")?.addEventListener("click", closeAdminDetail);
   $("#avatarEditButton")?.addEventListener("click", openAvatarModal);
   $("#avatarModalClose")?.addEventListener("click", closeAvatarModal);
+  $("#ticketModalClose")?.addEventListener("click", closeTicketModal);
+  $("#ticketPrintButton")?.addEventListener("click", printTicket);
   $("#avatarPickButton")?.addEventListener("click", () => $("#avatarFileInput")?.click());
   $("#avatarFileInput")?.addEventListener("change", handleAvatarFile);
   $("#avatarZoom")?.addEventListener("input", (event) => {
@@ -1308,7 +1552,14 @@ async function boot() {
     }
   }
 
-  if (page === "profile") renderProfile();
+  if (page === "profile") {
+    try {
+      await loadFestivals();
+    } catch (error) {
+      console.warn("Festival data is unavailable for tickets", error);
+    }
+    renderProfile();
+  }
   if (page === "admin") renderAdminPage();
 }
 
