@@ -106,6 +106,7 @@ class ParticipantProfile(models.Model):
     photo = models.ImageField("Фото профиля", upload_to="profile_photos/", blank=True)
     telegram = models.CharField("Telegram", max_length=80, blank=True)
     city = models.CharField("Город", max_length=120, blank=True)
+    last_seen_at = models.DateTimeField("Last seen", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

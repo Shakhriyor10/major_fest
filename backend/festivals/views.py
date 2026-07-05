@@ -2,6 +2,8 @@ from django.contrib.auth import authenticate, get_user_model
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework import mixins, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -21,6 +23,7 @@ from .serializers import (
 
 
 ADMIN_TOKEN_MAX_AGE = 60 * 60 * 12
+ONLINE_WINDOW_MINUTES = 5
 admin_signer = TimestampSigner(salt="major-fest-admin")
 
 
@@ -96,6 +99,19 @@ class AdminApplicationListView(APIView):
                 queryset = queryset.filter(status=status_filter)
         serializer = AdminFestivalApplicationSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
+
+
+class AdminSummaryView(APIView):
+    def get(self, request):
+        _user, error = require_admin(request)
+        if error:
+            return error
+        online_since = timezone.now() - timedelta(minutes=ONLINE_WINDOW_MINUTES)
+        return Response({
+            "profiles_total": ParticipantProfile.objects.count(),
+            "profiles_online": ParticipantProfile.objects.filter(last_seen_at__gte=online_since).count(),
+            "online_window_minutes": ONLINE_WINDOW_MINUTES,
+        })
 
 
 class AdminApplicationDetailView(APIView):
@@ -243,6 +259,8 @@ class AuthRegisterView(APIView):
         serializer = AuthRegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         profile = serializer.save()
+        profile.last_seen_at = timezone.now()
+        profile.save(update_fields=["last_seen_at"])
         return Response(ParticipantProfileSerializer(profile).data, status=status.HTTP_201_CREATED)
 
 
@@ -250,4 +268,15 @@ class AuthLoginView(APIView):
     def post(self, request):
         serializer = AuthLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        return Response(ParticipantProfileSerializer(serializer.validated_data["profile"]).data)
+        profile = serializer.validated_data["profile"]
+        profile.last_seen_at = timezone.now()
+        profile.save(update_fields=["last_seen_at"])
+        return Response(ParticipantProfileSerializer(profile).data)
+
+
+class ParticipantProfileSeenView(APIView):
+    def post(self, request, pk):
+        profile = get_object_or_404(ParticipantProfile, pk=pk)
+        profile.last_seen_at = timezone.now()
+        profile.save(update_fields=["last_seen_at"])
+        return Response(ParticipantProfileSerializer(profile).data)

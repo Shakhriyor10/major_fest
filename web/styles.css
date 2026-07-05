@@ -951,7 +951,7 @@ textarea:focus {
 
 .admin-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
   margin-bottom: 16px;
 }
@@ -980,6 +980,10 @@ textarea:focus {
 
 .admin-pending {
   border-left-color: #f59e0b;
+}
+
+.admin-online {
+  border-left-color: #16a34a;
 }
 
 .admin-approved {

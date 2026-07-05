@@ -11,6 +11,7 @@ const state = {
   selectedFestival: null,
   selectedCars: new Set(),
   adminApplications: [],
+  adminSummary: null,
   adminFilter: "all",
   adminSearch: "",
   adminToken: localStorage.getItem(ADMIN_STORAGE_KEY) || "",
@@ -187,11 +188,21 @@ async function loadProfileFromStorage() {
   if (!storedId) return;
   try {
     state.profile = await api(`/profiles/${storedId}/`);
+    await markProfileSeen();
     await loadApplications();
   } catch {
     localStorage.removeItem(STORAGE_KEY);
     state.profile = null;
     state.applications = [];
+  }
+}
+
+async function markProfileSeen() {
+  if (!state.profile?.id) return;
+  try {
+    state.profile = await api(`/profiles/${state.profile.id}/seen/`, { method: "POST" });
+  } catch (error) {
+    console.warn("Profile activity heartbeat failed", error);
   }
 }
 
@@ -671,6 +682,16 @@ function formatAdminDate(value) {
   }).format(new Date(value));
 }
 
+function formatLastSeen(value) {
+  if (!value) return "Еще не заходил";
+  const date = new Date(value);
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.max(0, Math.floor(diffMs / 60000));
+  if (minutes < 1) return "сейчас онлайн";
+  if (minutes < 60) return `${minutes} мин. назад`;
+  return formatAdminDate(value);
+}
+
 function applicationPhoto(application) {
   const appPhoto = application.photos?.[0]?.image;
   const car = application.cars_detail?.[0];
@@ -690,6 +711,10 @@ function applicationCarsText(application) {
   return application?.cars_detail?.length
     ? application.cars_detail.map((car) => `${car.make || ""} ${car.model || ""}`.trim()).join(", ")
     : "Автомобиль не указан";
+}
+
+function applicationLastSeen(application) {
+  return formatLastSeen(application?.participant_detail?.last_seen_at);
 }
 
 function ticketStatusLabel(application) {
@@ -866,6 +891,10 @@ async function loadAdminApplications() {
   state.adminApplications = Array.isArray(payload) ? payload : payload.results || [];
 }
 
+async function loadAdminSummary() {
+  state.adminSummary = await adminApi("/admin/summary/");
+}
+
 function renderAdminSummary() {
   const applications = state.adminApplications;
   const counts = applications.reduce((acc, application) => {
@@ -878,6 +907,8 @@ function renderAdminSummary() {
   $("#adminPending").textContent = counts.pending;
   $("#adminApproved").textContent = counts.approved;
   $("#adminRejected").textContent = counts.rejected;
+  const online = $("#adminOnline");
+  if (online) online.textContent = state.adminSummary?.profiles_online ?? 0;
 }
 
 function filteredAdminApplications() {
@@ -897,6 +928,32 @@ function filteredAdminApplications() {
     ].filter(Boolean).join(" ").toLowerCase();
     return matchesFilter && (!query || text.includes(query));
   });
+}
+
+function adminStatusActions(application) {
+  if (application.status === "approved") {
+    return `
+      <button class="glass-button danger-button" type="button" data-admin-status="reviewing" data-admin-cancel="true" data-application-id="${application.id}">Отменить</button>
+    `;
+  }
+  return `
+    <button class="primary-button" type="button" data-admin-status="approved" data-application-id="${application.id}">Принять</button>
+    <button class="glass-button danger-button" type="button" data-admin-status="rejected" data-application-id="${application.id}">Отказать</button>
+    <button class="glass-button" type="button" data-admin-status="reviewing" data-application-id="${application.id}">В ожидание</button>
+  `;
+}
+
+function syncAdminStatusActions(container, application) {
+  const actions = container.querySelector(".admin-card-actions");
+  if (!actions) return;
+  actions.querySelectorAll("[data-admin-status]").forEach((button) => button.remove());
+  actions.insertAdjacentHTML("beforeend", adminStatusActions(application));
+}
+
+function syncAdminActivity(container, application) {
+  const meta = container.querySelector(".admin-meta-grid, .admin-meta-list");
+  if (!meta || meta.querySelector("[data-admin-last-seen]")) return;
+  meta.insertAdjacentHTML("beforeend", `<span data-admin-last-seen><b>Последний раз</b>${applicationLastSeen(application)}</span>`);
 }
 
 function renderAdminApplications() {
@@ -953,6 +1010,13 @@ function renderAdminApplications() {
     `;
   }).join("");
   hydrateIcons(list);
+  list.querySelectorAll(".admin-application").forEach((card) => {
+    const application = state.adminApplications.find((item) => Number(item.id) === Number(card.dataset.applicationId));
+    if (application) {
+      syncAdminStatusActions(card, application);
+      syncAdminActivity(card, application);
+    }
+  });
 }
 
 async function handleAdminLogin(event) {
@@ -1084,6 +1148,8 @@ function renderAdminDetail(application) {
   `;
   modal.hidden = false;
   hydrateIcons(content);
+  syncAdminStatusActions(content, application);
+  syncAdminActivity(content, application);
 }
 
 async function openAdminDetail(applicationId) {
@@ -1109,6 +1175,9 @@ async function handleAdminApplicationClick(event) {
     return;
   }
   if (statusButton) {
+    if (statusButton.dataset.adminCancel === "true" && !window.confirm("Вы действительно хотите отменить заявку?")) {
+      return;
+    }
     await updateAdminApplicationStatus(statusButton.dataset.applicationId, statusButton.dataset.adminStatus);
   }
 }
@@ -1143,6 +1212,7 @@ async function renderAdminPage() {
   $("#adminPanel")?.toggleAttribute("hidden", !state.adminToken);
   if (!state.adminToken) return;
   try {
+    await loadAdminSummary();
     await loadAdminApplications();
     renderAdminApplications();
   } catch (error) {
@@ -1559,6 +1629,7 @@ async function boot() {
       console.warn("Festival data is unavailable for tickets", error);
     }
     renderProfile();
+    if (state.profile) setInterval(markProfileSeen, 60000);
   }
   if (page === "admin") renderAdminPage();
 }

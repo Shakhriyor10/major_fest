@@ -7,6 +7,7 @@ from .views import (
     AdminApplicationListView,
     AdminLoginView,
     AdminProfilePasswordView,
+    AdminSummaryView,
     AppSettingsView,
     AuthLoginView,
     AuthRegisterView,
@@ -14,6 +15,7 @@ from .views import (
     FestivalCommentViewSet,
     FestivalViewSet,
     ParticipantCarViewSet,
+    ParticipantProfileSeenView,
     ParticipantProfileViewSet,
 )
 
@@ -29,9 +31,11 @@ urlpatterns = [
     path("auth/register/", AuthRegisterView.as_view(), name="auth-register"),
     path("auth/login/", AuthLoginView.as_view(), name="auth-login"),
     path("admin/login/", AdminLoginView.as_view(), name="admin-login"),
+    path("admin/summary/", AdminSummaryView.as_view(), name="admin-summary"),
     path("admin/applications/", AdminApplicationListView.as_view(), name="admin-applications"),
     path("admin/applications/<int:pk>/", AdminApplicationDetailView.as_view(), name="admin-application-detail"),
     path("admin/profiles/<int:pk>/password/", AdminProfilePasswordView.as_view(), name="admin-profile-password"),
+    path("profiles/<int:pk>/seen/", ParticipantProfileSeenView.as_view(), name="profile-seen"),
 ]
 
 urlpatterns += router.urls

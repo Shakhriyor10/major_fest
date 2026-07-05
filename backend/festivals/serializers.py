@@ -174,8 +174,8 @@ class ParticipantProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ParticipantProfile
-        fields = ["id", "full_name", "phone", "photo", "telegram", "city", "cars", "remove_photo", "created_at"]
-        read_only_fields = ["created_at"]
+        fields = ["id", "full_name", "phone", "photo", "telegram", "city", "cars", "remove_photo", "last_seen_at", "created_at"]
+        read_only_fields = ["last_seen_at", "created_at"]
 
     def create(self, validated_data):
         phone = validated_data["phone"]
