@@ -48,6 +48,14 @@ const applicationStatusMeta = {
   rejected: { label: "Не принята", group: "rejected" },
 };
 
+const carPurposeLabels = {
+  avtozvuk: "Автозвук",
+  drift: "Дрифт",
+  retro: "Ретро",
+  milliy: "Миллий",
+  tuning: "Тюнинг",
+};
+
 const icons = {
   user: '<svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>',
   car: '<svg viewBox="0 0 24 24"><path d="M19 17h2l-2-7a3 3 0 0 0-3-2H8a3 3 0 0 0-3 2l-2 7h2"/><path d="M7 17h10"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>',
@@ -335,7 +343,7 @@ function renderSelectableCars() {
       <span class="car-check"></span>
       <span>
         <strong>${car.make} ${car.model}</strong>
-        <small>${car.year} · ${car.engine}</small>
+        <small>${[car.year, car.engine, carPurposeLabels[car.purpose]].filter(Boolean).join(" · ")}</small>
       </span>
     </label>
   `).join("");
@@ -612,12 +620,13 @@ function renderGarage() {
 function carCard(car) {
   const image = mediaUrl(car.main_photo || car.photos?.[0]?.image) || fallbackImage();
   const used = carHasApplications(car.id);
+  const purpose = carPurposeLabels[car.purpose] || "";
   return `
     <article class="garage-card">
       <img src="${image}" alt="${car.make} ${car.model}">
       <div class="garage-card-body">
         <h3>${car.make} ${car.model}</h3>
-        <p>${car.year} · ${car.engine}</p>
+        <p>${[car.year, car.engine, purpose].filter(Boolean).join(" · ")}</p>
         <small>${car.tuning_details || car.condition || "Готов к фестивалю"}</small>
         <button class="icon-delete-button car-delete-button" type="button" data-car-id="${car.id}" data-car-used="${used ? "true" : "false"}" aria-label="Удалить авто" title="Удалить авто">
           <span class="icon" data-icon="trash"></span>
@@ -697,6 +706,40 @@ function applicationPhoto(application) {
   const car = application.cars_detail?.[0];
   const carPhoto = car?.main_photo || car?.photos?.[0]?.image;
   return mediaUrl(appPhoto || carPhoto) || fallbackImage();
+}
+
+function applicationGallery(application) {
+  const photos = [];
+  const addPhoto = (src, title = "Фото автомобиля") => {
+    const url = mediaUrl(src);
+    if (url && !photos.some((photo) => photo.src === url)) photos.push({ src: url, title });
+  };
+  (application.photos || []).forEach((photo) => addPhoto(photo.image, photo.caption || "Фото заявки"));
+  (application.cars_detail || []).forEach((car) => {
+    const carName = `${car.make || ""} ${car.model || ""}`.trim() || "Автомобиль";
+    addPhoto(car.main_photo, carName);
+    (car.photos || []).forEach((photo) => addPhoto(photo.image, carName));
+  });
+  if (!photos.length) addPhoto(applicationPhoto(application), "Фото автомобиля");
+  return photos;
+}
+
+function openImageViewer(src, title = "Фото автомобиля") {
+  const modal = $("#imageViewerModal");
+  const image = $("#imageViewerImage");
+  const caption = $("#imageViewerCaption");
+  if (!modal || !image) return;
+  image.src = src;
+  image.alt = title;
+  if (caption) caption.textContent = title;
+  modal.hidden = false;
+}
+
+function closeImageViewer() {
+  const modal = $("#imageViewerModal");
+  const image = $("#imageViewerImage");
+  if (modal) modal.hidden = true;
+  if (image) image.removeAttribute("src");
 }
 
 function ticketApplicationId(application) {
@@ -978,7 +1021,9 @@ function renderAdminApplications() {
       : `${application.car_make} ${application.car_model} ${application.car_year || ""}`.trim();
     return `
       <article class="admin-application application-${application.status}" data-application-id="${application.id}">
-        <img src="${applicationPhoto(application)}" alt="${application.car_make || "Авто"}" />
+        <button class="admin-application-photo" type="button" data-image-open="${applicationPhoto(application)}" data-image-title="${escapeText(cars || application.car_make || "Авто")}">
+          <img src="${applicationPhoto(application)}" alt="${application.car_make || "Авто"}" />
+        </button>
         <div class="admin-application-body">
           <div class="admin-card-head">
             <div>
@@ -1064,6 +1109,20 @@ function carImage(car) {
   return mediaUrl(car.main_photo || car.photos?.[0]?.image) || fallbackImage();
 }
 
+function renderAdminGallery(application) {
+  const photos = applicationGallery(application);
+  if (!photos.length) return "";
+  return `
+    <div class="admin-photo-gallery">
+      ${photos.map((photo, index) => `
+        <button type="button" data-image-open="${photo.src}" data-image-title="${escapeText(photo.title)} #${index + 1}">
+          <img src="${photo.src}" alt="${escapeText(photo.title)}" />
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderProfileCars(cars, selectedCars = []) {
   const selectedIds = new Set(selectedCars.map((car) => Number(car.id)));
   if (!cars.length) return `<p class="muted">В профиле пока нет добавленных машин.</p>`;
@@ -1076,7 +1135,7 @@ function renderProfileCars(cars, selectedCars = []) {
           <img src="${carImage(car)}" alt="${car.make || "Авто"}" />
           <div>
             <strong>${isSelected ? `<span class="application-car-dot" title="РњР°С€РёРЅР° СѓС‡Р°СЃС‚РІСѓРµС‚ РІ СЌС‚РѕР№ Р·Р°СЏРІРєРµ"></span>` : ""}${car.make} ${car.model} ${car.year || ""}</strong>
-            <small>${car.engine || "Мотор не указан"}</small>
+            <small>${[car.engine, carPurposeLabels[car.purpose]].filter(Boolean).join(" · ") || "Мотор не указан"}</small>
             <p>${car.condition || "Состояние не указано"}</p>
             ${car.tuning_details ? `<p>${car.tuning_details}</p>` : ""}
           </div>
@@ -1098,7 +1157,10 @@ function renderAdminDetail(application) {
   content.innerHTML = `
     <div class="admin-detail-shell">
       <aside class="admin-detail-media">
-        <img class="admin-detail-photo" src="${applicationPhoto(application)}" alt="${application.car_make || "Авто"}" />
+        <button class="admin-detail-photo-button" type="button" data-image-open="${applicationPhoto(application)}" data-image-title="${escapeText(`${application.car_make || "Авто"} ${application.car_model || ""}`.trim())}">
+          <img class="admin-detail-photo" src="${applicationPhoto(application)}" alt="${application.car_make || "Авто"}" />
+        </button>
+        ${renderAdminGallery(application)}
         <div class="admin-card-actions admin-detail-actions">
           <button class="primary-button" type="button" data-admin-status="approved" data-application-id="${application.id}">Принять</button>
           <button class="glass-button danger-button" type="button" data-admin-status="rejected" data-application-id="${application.id}">Отказать</button>
@@ -1168,8 +1230,13 @@ function closeAdminDetail() {
 }
 
 async function handleAdminApplicationClick(event) {
+  const imageButton = event.target.closest("[data-image-open]");
   const detailButton = event.target.closest("[data-admin-detail]");
   const statusButton = event.target.closest("[data-admin-status]");
+  if (imageButton) {
+    openImageViewer(imageButton.dataset.imageOpen, imageButton.dataset.imageTitle || "Фото автомобиля");
+    return;
+  }
   if (detailButton) {
     await openAdminDetail(detailButton.dataset.adminDetail);
     return;
@@ -1452,6 +1519,11 @@ async function handleCarCreate(event) {
   event.preventDefault();
   if (!state.profile) return;
   const form = event.currentTarget;
+  if (!form.purpose.value) {
+    $("#carMessage").textContent = "Выберите, для чего машина.";
+    form.purpose.focus();
+    return;
+  }
   const files = Array.from(form.uploaded_photos.files || []);
   if (!files.length) {
     $("#carMessage").textContent = "Добавьте хотя бы одно фото автомобиля.";
@@ -1460,7 +1532,7 @@ async function handleCarCreate(event) {
   }
   const body = new FormData();
   body.append("owner", state.profile.id);
-  ["make", "model", "year", "engine", "condition", "tuning_details"].forEach((name) => {
+  ["make", "model", "year", "engine", "purpose", "condition", "tuning_details"].forEach((name) => {
     body.append(name, form[name].value);
   });
   files.slice(0, 5).forEach((file) => {
@@ -1567,6 +1639,10 @@ function bindEvents() {
   $("#adminDetailContent")?.addEventListener("click", handleAdminApplicationClick);
   $("#adminDetailContent")?.addEventListener("submit", handleAdminPasswordChange);
   $("#adminDetailClose")?.addEventListener("click", closeAdminDetail);
+  $("#imageViewerClose")?.addEventListener("click", closeImageViewer);
+  $("#imageViewerModal")?.addEventListener("click", (event) => {
+    if (event.target.id === "imageViewerModal") closeImageViewer();
+  });
   $("#avatarEditButton")?.addEventListener("click", openAvatarModal);
   $("#avatarModalClose")?.addEventListener("click", closeAvatarModal);
   $("#ticketModalClose")?.addEventListener("click", closeTicketModal);

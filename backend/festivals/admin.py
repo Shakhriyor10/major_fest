@@ -117,8 +117,8 @@ class ParticipantProfileAdmin(admin.ModelAdmin):
 
 @admin.register(ParticipantCar)
 class ParticipantCarAdmin(admin.ModelAdmin):
-    list_display = ("owner", "make", "model", "year", "engine", "created_at")
-    list_filter = ("make", "year")
+    list_display = ("owner", "make", "model", "year", "engine", "purpose", "created_at")
+    list_filter = ("make", "year", "purpose")
     search_fields = ("owner__full_name", "owner__phone", "make", "model", "engine")
     inlines = [ParticipantCarPhotoInline]
 

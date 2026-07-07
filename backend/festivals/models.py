@@ -126,6 +126,13 @@ class ParticipantProfile(models.Model):
 
 
 class ParticipantCar(models.Model):
+    class Purpose(models.TextChoices):
+        AVTOZVUK = "avtozvuk", "Автозвук"
+        DRIFT = "drift", "Дрифт"
+        RETRO = "retro", "Ретро"
+        MILLIY = "milliy", "Миллий"
+        TUNING = "tuning", "Тюнинг"
+
     owner = models.ForeignKey(
         ParticipantProfile,
         related_name="cars",
@@ -136,6 +143,7 @@ class ParticipantCar(models.Model):
     model = models.CharField("Модель", max_length=120)
     year = models.PositiveIntegerField("Год выпуска")
     engine = models.CharField("Мотор", max_length=160)
+    purpose = models.CharField("Для чего машина", max_length=20, choices=Purpose.choices, blank=True, default="")
     condition = models.TextField("Состояние машины")
     tuning_details = models.TextField("Тюнинг и особенности", blank=True)
     main_photo = models.ImageField("Главное фото", upload_to="profile_cars/", blank=True)

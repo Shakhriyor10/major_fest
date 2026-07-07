@@ -101,6 +101,14 @@
             <input name="model" placeholder="Модель" required />
             <input name="year" type="number" placeholder="Год" min="1900" max="2026" required />
             <input name="engine" placeholder="Мотор" required />
+            <select name="purpose" required>
+              <option value="" selected disabled>Для чего машина</option>
+              <option value="avtozvuk">Автозвук</option>
+              <option value="drift">Дрифт</option>
+              <option value="retro">Ретро</option>
+              <option value="milliy">Миллий</option>
+              <option value="tuning">Тюнинг</option>
+            </select>
           </div>
           <textarea name="condition" placeholder="Состояние машины" required></textarea>
           <textarea name="tuning_details" placeholder="Тюнинг и особенности"></textarea>
@@ -175,6 +183,6 @@
         </div>
       </div>
     </div>
-    <script src="/web/app.js?v=13"></script>
+    <script src="/web/app.js?v=14"></script>
   </body>
 </html>

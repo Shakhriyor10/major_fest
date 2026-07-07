@@ -114,6 +114,7 @@ class ParticipantCarSerializer(serializers.ModelSerializer):
             "model",
             "year",
             "engine",
+            "purpose",
             "condition",
             "tuning_details",
             "main_photo",
@@ -136,6 +137,10 @@ class ParticipantCarSerializer(serializers.ModelSerializer):
         if self.instance is None and not attrs.get("uploaded_photos"):
             raise serializers.ValidationError({
                 "uploaded_photos": "Добавьте хотя бы одно фото автомобиля."
+            })
+        if self.instance is None and not attrs.get("purpose"):
+            raise serializers.ValidationError({
+                "purpose": "Выберите, для чего машина."
             })
         return attrs
 
