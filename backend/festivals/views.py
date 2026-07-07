@@ -26,6 +26,53 @@ ADMIN_TOKEN_MAX_AGE = 60 * 60 * 12
 ONLINE_WINDOW_MINUTES = 5
 admin_signer = TimestampSigner(salt="major-fest-admin")
 
+CAR_PURPOSE_LABELS = {
+    "avtozvuk": "Автозвук",
+    "drift": "Дрифт",
+    "retro": "Ретро",
+    "milliy": "Миллий",
+    "tuning": "Тюнинг",
+}
+
+
+def ticket_application_id(application):
+    return f"SF-{str(application.get('id') or 0).zfill(5)}"
+
+
+def ticket_hash(value):
+    hash_value = 2166136261
+    for char in str(value):
+        hash_value ^= ord(char)
+        hash_value = (hash_value * 16777619) & 0xFFFFFFFF
+    return hash_value
+
+
+def ticket_secure_code(application):
+    cars = application.get("cars_detail") or []
+    cars_text = ", ".join(
+        " - ".join(filter(None, [
+            f"{car.get('make') or ''} {car.get('model') or ''}".strip(),
+            CAR_PURPOSE_LABELS.get(car.get("purpose") or ""),
+        ]))
+        for car in cars
+    ) or "Автомобиль не указан"
+    seed = "|".join([
+        ticket_application_id(application),
+        str(application.get("participant") or ""),
+        str(application.get("festival") or ""),
+        str(application.get("created_at") or ""),
+        str(application.get("phone") or ""),
+        cars_text,
+    ])
+    chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    number = ticket_hash(seed)
+    encoded = ""
+    while number:
+        number, remainder = divmod(number, 36)
+        encoded = chars[remainder] + encoded
+    encoded = encoded.rjust(7, "0")
+    return f"{ticket_application_id(application)}-{encoded[:3]}-{encoded[3:7]}"
+
 
 def get_admin_user(request):
     header = request.headers.get("Authorization", "")
@@ -147,6 +194,31 @@ class AdminApplicationDetailView(APIView):
             .get(pk=application.pk)
         )
         return Response(AdminFestivalApplicationSerializer(application, context={"request": request}).data)
+
+
+class AdminTicketVerifyView(APIView):
+    def get(self, request, pk):
+        _user, error = require_admin(request)
+        if error:
+            return error
+        application = get_object_or_404(
+            FestivalApplication.objects.select_related("festival", "participant")
+            .prefetch_related("cars__photos", "participant__cars__photos", "photos"),
+            pk=pk,
+        )
+        data = AdminFestivalApplicationSerializer(application, context={"request": request}).data
+        secure_code = ticket_secure_code(data)
+        provided_code = request.query_params.get("code", "")
+        if provided_code != secure_code:
+            return Response({
+                "valid": False,
+                "detail": "Контрольный код билета не совпадает.",
+            }, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "valid": application.status == FestivalApplication.Status.APPROVED,
+            "secure_code": secure_code,
+            "application": data,
+        })
 
 
 class AdminProfilePasswordView(APIView):

@@ -8,6 +8,7 @@ from .views import (
     AdminLoginView,
     AdminProfilePasswordView,
     AdminSummaryView,
+    AdminTicketVerifyView,
     AppSettingsView,
     AuthLoginView,
     AuthRegisterView,
@@ -34,6 +35,7 @@ urlpatterns = [
     path("admin/summary/", AdminSummaryView.as_view(), name="admin-summary"),
     path("admin/applications/", AdminApplicationListView.as_view(), name="admin-applications"),
     path("admin/applications/<int:pk>/", AdminApplicationDetailView.as_view(), name="admin-application-detail"),
+    path("admin/tickets/<int:pk>/verify/", AdminTicketVerifyView.as_view(), name="admin-ticket-verify"),
     path("admin/profiles/<int:pk>/password/", AdminProfilePasswordView.as_view(), name="admin-profile-password"),
     path("profiles/<int:pk>/seen/", ParticipantProfileSeenView.as_view(), name="profile-seen"),
 ]

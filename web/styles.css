@@ -479,6 +479,7 @@ h3 {
 .content-section,
 .auth-page,
 .profile-page,
+.verify-page,
 .admin-page {
   width: min(1180px, calc(100% - 28px));
   margin: 0 auto;
@@ -499,6 +500,7 @@ h3 {
 .profile-card,
 .car-form,
 .garage-panel,
+.profile-apply-panel,
 .applications,
 .locked-panel,
 .comment-form,
@@ -506,6 +508,7 @@ h3 {
 .garage-card,
 .application-item,
 .empty-card,
+.verify-card,
 .admin-stat,
 .admin-toolbar,
 .admin-login-card,
@@ -606,6 +609,7 @@ h3 {
 .profile-card,
 .car-form,
 .garage-panel,
+.profile-apply-panel,
 .applications,
 .locked-panel,
 .comment-form {
@@ -613,6 +617,7 @@ h3 {
 }
 
 .selectable-cars,
+.profile-apply-cars,
 .garage-preview,
 #applicationsList,
 .comments,
@@ -639,6 +644,17 @@ h3 {
   border-color: rgba(230, 0, 35, 0.35);
   background: #fffafa;
   transform: translateY(-1px);
+}
+
+.selectable-car.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+
+.selectable-car.is-disabled:hover {
+  border-color: var(--line);
+  background: #fff;
+  transform: none;
 }
 
 .selectable-car input {
@@ -777,6 +793,7 @@ h3 {
 label,
 .mini-form,
 .car-form,
+.profile-apply-form,
 .apply-panel,
 .auth-card {
   display: grid;
@@ -913,6 +930,10 @@ textarea:focus {
   padding: 136px 0 86px;
 }
 
+.verify-page {
+  padding: 136px 0 86px;
+}
+
 .admin-page {
   padding: 136px 0 86px;
 }
@@ -947,6 +968,56 @@ textarea:focus {
   gap: 7px;
   color: #222630;
   font-weight: 900;
+}
+
+.verify-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items: start;
+  margin-top: 18px;
+  padding: 20px;
+}
+
+.verify-card h2 {
+  margin-bottom: 8px;
+  font-size: clamp(28px, 4vw, 48px);
+}
+
+.verify-valid {
+  border-color: rgba(22, 163, 74, 0.34);
+  background: linear-gradient(135deg, #ecfdf3, #fff 44%);
+}
+
+.verify-invalid {
+  border-color: rgba(230, 0, 35, 0.34);
+  background: linear-gradient(135deg, #fff0f1, #fff 44%);
+}
+
+.verify-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.verify-fields span {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #343943;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.verify-fields b {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
 }
 
 .admin-summary {
@@ -1493,6 +1564,26 @@ textarea:focus {
   grid-column: 1 / -1;
 }
 
+.profile-apply-panel {
+  grid-column: 1 / -1;
+}
+
+.profile-apply-form {
+  margin-top: 16px;
+}
+
+.profile-apply-cars {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.profile-apply-car {
+  min-height: 82px;
+}
+
+.profile-apply-empty {
+  box-shadow: none;
+}
+
 .section-title-row.compact h2 {
   font-size: clamp(30px, 4vw, 50px);
 }
@@ -1722,8 +1813,32 @@ textarea:focus {
   padding: clamp(18px, 3vw, 30px);
   border: 1px solid #e4e6eb;
   border-radius: 12px;
-  background: #fff;
+  background:
+    linear-gradient(135deg, rgba(230, 0, 35, 0.045), transparent 26%),
+    repeating-linear-gradient(45deg, rgba(16, 17, 20, 0.025) 0 1px, transparent 1px 9px),
+    #fff;
   box-shadow: var(--soft-shadow);
+}
+
+.festival-ticket::before,
+.festival-ticket::after {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e4e6eb;
+  border-radius: 50%;
+  background: #f3f4f6;
+  content: "";
+}
+
+.festival-ticket::before {
+  left: -15px;
+}
+
+.festival-ticket::after {
+  right: -15px;
 }
 
 .ticket-watermark {
@@ -1739,8 +1854,21 @@ textarea:focus {
   pointer-events: none;
 }
 
+.ticket-security-pattern {
+  position: absolute;
+  inset: 12px;
+  border: 1px solid rgba(230, 0, 35, 0.12);
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 18px, rgba(230, 0, 35, 0.045) 18px 19px),
+    repeating-linear-gradient(0deg, transparent 0 18px, rgba(5, 6, 8, 0.035) 18px 19px);
+  mask-image: linear-gradient(135deg, black, transparent 78%);
+  pointer-events: none;
+}
+
 .ticket-header,
 .ticket-main,
+.ticket-security-row,
 .ticket-footer,
 .ticket-brand,
 .ticket-status {
@@ -1824,6 +1952,76 @@ textarea:focus {
   letter-spacing: 0.08em;
 }
 
+.ticket-code-box span {
+  display: block;
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.ticket-security-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  gap: 12px;
+}
+
+.ticket-barcode-box,
+.ticket-verify-box {
+  min-width: 0;
+  border: 1px dashed #cfd3dc;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.ticket-barcode-box {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+}
+
+.ticket-barcode {
+  width: 100%;
+  height: 66px;
+  fill: var(--black);
+}
+
+.ticket-barcode-box small,
+.ticket-verify-box small,
+.ticket-verify-box span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ticket-verify-box {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+}
+
+.ticket-qr-code {
+  width: 82px;
+  height: 82px;
+  padding: 8px;
+  border: 1px solid #111317;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.ticket-verify-box strong {
+  display: block;
+  margin: 5px 0;
+  color: var(--black);
+  font-size: 20px;
+  letter-spacing: 0.06em;
+}
+
 .ticket-grid {
   position: relative;
   z-index: 1;
@@ -1851,6 +2049,20 @@ textarea:focus {
   font-size: 18px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.ticket-microtext {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  border-top: 1px solid rgba(230, 0, 35, 0.16);
+  border-bottom: 1px solid rgba(230, 0, 35, 0.16);
+  color: rgba(230, 0, 35, 0.52);
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: 0.14em;
+  line-height: 18px;
 }
 
 .ticket-footer {
@@ -2115,6 +2327,10 @@ textarea:focus {
 
   .ticket-code-box {
     width: 100%;
+  }
+
+  .ticket-security-row {
+    grid-template-columns: 1fr;
   }
 }
 

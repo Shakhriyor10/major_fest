@@ -590,6 +590,7 @@ function renderProfile() {
     profileForm.city.value = state.profile.city || "";
   }
   renderGarage();
+  renderProfileApply();
   renderApplications();
 }
 
@@ -640,6 +641,75 @@ function carHasApplications(carId) {
   return state.applications.some((application) =>
     (application.cars_detail || []).some((car) => Number(car.id) === Number(carId))
   );
+}
+
+function carHasFestivalApplication(carId, festivalId) {
+  return state.applications.some((application) =>
+    Number(application.festival) === Number(festivalId) &&
+    (application.cars_detail || []).some((car) => Number(car.id) === Number(carId))
+  );
+}
+
+function renderProfileApply() {
+  const content = $("#profileApplyContent");
+  if (!content) return;
+  const cars = state.profile?.cars || [];
+  const festivals = state.festivals || [];
+  if (!cars.length) {
+    content.innerHTML = `
+      <div class="empty-card profile-apply-empty">
+        <p>Сначала добавь автомобиль в гараж, потом здесь появится быстрая подача заявки.</p>
+      </div>
+    `;
+    return;
+  }
+  if (!festivals.length) {
+    content.innerHTML = `
+      <div class="empty-card profile-apply-empty">
+        <p>Фестивали пока не загружены. Попробуй обновить страницу чуть позже.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const currentSelect = $("#profileFestivalSelect");
+  const selectedFestivalId = Number(currentSelect?.value || festivals[0].id);
+  content.innerHTML = `
+    <label>
+      Фестиваль
+      <select id="profileFestivalSelect" name="festival" required>
+        ${festivals.map((festival) => `
+          <option value="${festival.id}" ${Number(festival.id) === selectedFestivalId ? "selected" : ""}>
+            ${escapeText(festival.title || `Фестиваль #${festival.id}`)}
+          </option>
+        `).join("")}
+      </select>
+    </label>
+    <div class="profile-apply-cars">
+      ${cars.map((car) => {
+        const used = carHasFestivalApplication(car.id, selectedFestivalId);
+        return `
+          <label class="selectable-car profile-apply-car ${used ? "is-disabled" : ""}">
+            <input type="checkbox" name="cars" value="${car.id}" ${used ? "disabled" : ""}>
+            <span class="car-check"></span>
+            <span>
+              <strong>${escapeText(`${car.make} ${car.model}`.trim())}</strong>
+              <small>${used ? "Уже есть заявка на этот фестиваль" : escapeText([car.year, car.engine, carPurposeLabels[car.purpose]].filter(Boolean).join(" · "))}</small>
+            </span>
+          </label>
+        `;
+      }).join("")}
+    </div>
+    <button class="primary-button" type="submit">
+      <span class="icon" data-icon="send"></span>
+      <span>Отправить заявку</span>
+    </button>
+  `;
+  $("#profileFestivalSelect")?.addEventListener("change", () => {
+    $("#profileApplyMessage").textContent = "";
+    renderProfileApply();
+  });
+  hydrateIcons(content);
 }
 
 function renderApplications() {
@@ -752,7 +822,11 @@ function applicationFestival(application) {
 
 function applicationCarsText(application) {
   return application?.cars_detail?.length
-    ? application.cars_detail.map((car) => `${car.make || ""} ${car.model || ""}`.trim()).join(", ")
+    ? application.cars_detail.map((car) => {
+        const name = `${car.make || ""} ${car.model || ""}`.trim();
+        const purpose = carPurposeLabels[car.purpose] || "";
+        return [name, purpose].filter(Boolean).join(" - ");
+      }).join(", ")
     : "Автомобиль не указан";
 }
 
@@ -774,11 +848,223 @@ function applicationOwnerName() {
   return state.profile?.full_name || state.profile?.phone || "Участник фестиваля";
 }
 
+function ticketSecuritySeed(application) {
+  const cars = applicationCarsText(application);
+  return [
+    ticketApplicationId(application),
+    application?.participant || state.profile?.id || "",
+    application?.festival || "",
+    application?.created_at || "",
+    state.profile?.phone || application?.phone || "",
+    cars,
+  ].join("|");
+}
+
+function ticketHash(value) {
+  let hash = 2166136261;
+  String(value).split("").forEach((char) => {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  });
+  return hash >>> 0;
+}
+
+function ticketSecureCode(application) {
+  const hash = ticketHash(ticketSecuritySeed(application)).toString(36).toUpperCase().padStart(7, "0");
+  return `${ticketApplicationId(application)}-${hash.slice(0, 3)}-${hash.slice(3, 7)}`;
+}
+
+function ticketBarcode(application) {
+  const secureCode = ticketSecureCode(application);
+  const bits = Array.from(secureCode).map((char) => char.charCodeAt(0).toString(2).padStart(8, "0")).join("");
+  let x = 8;
+  const bars = [];
+  bits.split("").forEach((bit, index) => {
+    const width = bit === "1" ? 3 : 1;
+    const height = index % 5 === 0 ? 58 : index % 3 === 0 ? 48 : 40;
+    bars.push(`<rect x="${x}" y="${62 - height}" width="${width}" height="${height}" rx="0.4"></rect>`);
+    x += width + 2;
+  });
+  return `
+    <svg class="ticket-barcode" viewBox="0 0 ${x + 6} 68" role="img" aria-label="Штрих код билета">
+      ${bars.join("")}
+    </svg>
+  `;
+}
+
+function gfMultiply(x, y) {
+  let result = 0;
+  while (y) {
+    if (y & 1) result ^= x;
+    x <<= 1;
+    if (x & 0x100) x ^= 0x11d;
+    y >>= 1;
+  }
+  return result;
+}
+
+function qrGeneratorPolynomial(degree) {
+  let poly = [1];
+  let root = 1;
+  for (let i = 0; i < degree; i += 1) {
+    const next = Array(poly.length + 1).fill(0);
+    poly.forEach((coef, index) => {
+      next[index] ^= gfMultiply(coef, root);
+      next[index + 1] ^= coef;
+    });
+    poly = next;
+    root = gfMultiply(root, 2);
+  }
+  return poly;
+}
+
+function qrErrorCorrection(data, degree) {
+  const generator = qrGeneratorPolynomial(degree);
+  const message = data.concat(Array(degree).fill(0));
+  data.forEach((_, index) => {
+    const factor = message[index];
+    if (!factor) return;
+    generator.forEach((coef, offset) => {
+      message[index + offset] ^= gfMultiply(coef, factor);
+    });
+  });
+  return message.slice(data.length);
+}
+
+function qrAppendBits(bits, value, length) {
+  for (let i = length - 1; i >= 0; i -= 1) bits.push((value >>> i) & 1);
+}
+
+function qrCodewords(text) {
+  const bytes = Array.from(new TextEncoder().encode(text));
+  const dataLength = 108;
+  const bits = [];
+  qrAppendBits(bits, 0x4, 4);
+  qrAppendBits(bits, bytes.length, 8);
+  bytes.forEach((byte) => qrAppendBits(bits, byte, 8));
+  qrAppendBits(bits, 0, Math.min(4, dataLength * 8 - bits.length));
+  while (bits.length % 8) bits.push(0);
+  const codewords = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    codewords.push(bits.slice(i, i + 8).reduce((value, bit) => (value << 1) | bit, 0));
+  }
+  for (let pad = 0; codewords.length < dataLength; pad += 1) codewords.push(pad % 2 ? 0x11 : 0xec);
+  return codewords.concat(qrErrorCorrection(codewords, 26));
+}
+
+function qrFormatBits() {
+  let data = (1 << 3) | 0;
+  let bits = data << 10;
+  const generator = 0x537;
+  for (let i = 14; i >= 10; i -= 1) {
+    if ((bits >>> i) & 1) bits ^= generator << (i - 10);
+  }
+  return (((data << 10) | bits) ^ 0x5412) & 0x7fff;
+}
+
+function makeQrSvg(text) {
+  const version = 5;
+  const size = 4 * version + 17;
+  const modules = Array.from({ length: size }, () => Array(size).fill(false));
+  const reserved = Array.from({ length: size }, () => Array(size).fill(false));
+  const setModule = (x, y, dark, isReserved = true) => {
+    if (x < 0 || y < 0 || x >= size || y >= size) return;
+    modules[y][x] = dark;
+    if (isReserved) reserved[y][x] = true;
+  };
+  const drawFinder = (x, y) => {
+    for (let dy = -1; dy <= 7; dy += 1) {
+      for (let dx = -1; dx <= 7; dx += 1) {
+        const xx = x + dx;
+        const yy = y + dy;
+        const dark = dx >= 0 && dx <= 6 && dy >= 0 && dy <= 6 && (dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4));
+        setModule(xx, yy, dark);
+      }
+    }
+  };
+  const drawAlignment = (cx, cy) => {
+    for (let dy = -2; dy <= 2; dy += 1) {
+      for (let dx = -2; dx <= 2; dx += 1) {
+        setModule(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+      }
+    }
+  };
+  drawFinder(0, 0);
+  drawFinder(size - 7, 0);
+  drawFinder(0, size - 7);
+  drawAlignment(30, 30);
+  for (let i = 8; i < size - 8; i += 1) {
+    setModule(i, 6, i % 2 === 0);
+    setModule(6, i, i % 2 === 0);
+  }
+  setModule(8, size - 8, true);
+  for (let i = 0; i < 9; i += 1) {
+    if (i !== 6) {
+      setModule(8, i, false);
+      setModule(i, 8, false);
+    }
+  }
+  for (let i = 0; i < 8; i += 1) {
+    setModule(size - 1 - i, 8, false);
+    setModule(8, size - 1 - i, false);
+  }
+
+  const bits = qrCodewords(text).flatMap((codeword) => Array.from({ length: 8 }, (_, index) => (codeword >>> (7 - index)) & 1));
+  let bitIndex = 0;
+  let upward = true;
+  for (let x = size - 1; x > 0; x -= 2) {
+    if (x === 6) x -= 1;
+    for (let step = 0; step < size; step += 1) {
+      const y = upward ? size - 1 - step : step;
+      [x, x - 1].forEach((xx) => {
+        if (reserved[y][xx]) return;
+        const raw = Boolean(bits[bitIndex]);
+        const masked = raw !== ((xx + y) % 2 === 0);
+        setModule(xx, y, masked, false);
+        bitIndex += 1;
+      });
+    }
+    upward = !upward;
+  }
+
+  const format = qrFormatBits();
+  const formatBit = (index) => Boolean((format >>> index) & 1);
+  for (let i = 0; i <= 5; i += 1) setModule(8, i, formatBit(i));
+  setModule(8, 7, formatBit(6));
+  setModule(8, 8, formatBit(7));
+  setModule(7, 8, formatBit(8));
+  for (let i = 9; i < 15; i += 1) setModule(14 - i, 8, formatBit(i));
+  for (let i = 0; i < 8; i += 1) setModule(size - 1 - i, 8, formatBit(i));
+  for (let i = 8; i < 15; i += 1) setModule(8, size - 15 + i, formatBit(i));
+
+  const quiet = 4;
+  const rects = [];
+  modules.forEach((row, y) => {
+    row.forEach((dark, x) => {
+      if (dark) rects.push(`<rect x="${x + quiet}" y="${y + quiet}" width="1" height="1"></rect>`);
+    });
+  });
+  return `
+    <svg class="ticket-qr-code" viewBox="0 0 ${size + quiet * 2} ${size + quiet * 2}" role="img" aria-label="QR код проверки билета">
+      <rect width="${size + quiet * 2}" height="${size + quiet * 2}" fill="#fff"></rect>
+      <g fill="#111317">${rects.join("")}</g>
+    </svg>
+  `;
+}
+
+function ticketVerifyUrl(application) {
+  const url = new URL("/web/verify.html", window.location.origin);
+  url.searchParams.set("i", application?.id || "");
+  url.searchParams.set("c", ticketSecureCode(application));
+  return url.toString();
+}
+
 function ticketMarkup(application) {
   const festival = applicationFestival(application);
   const place = festival.location || festival.city || "Samarkand Touristic Centre";
-  const date = festival.start_date ? formatDate(festival.start_date) : "Дата уточняется";
+  const date = "18-19 июля";
   const code = ticketApplicationId(application);
+  const secureCode = ticketSecureCode(application);
   const status = ticketStatusLabel(application);
   const owner = applicationOwnerName();
   const phone = state.profile?.phone || "Телефон не указан";
@@ -786,6 +1072,7 @@ function ticketMarkup(application) {
   return `
     <article class="festival-ticket">
       <div class="ticket-watermark">SAMARKAND FEST</div>
+      <div class="ticket-security-pattern" aria-hidden="true"></div>
       <header class="ticket-header">
         <div class="ticket-brand">
           <img src="/web/assets/logo_2.png" alt="" />
@@ -804,11 +1091,27 @@ function ticketMarkup(application) {
         <div>
           <span class="ticket-label">Билет участника</span>
           <h2>${escapeText(festival.title || "Samarkand Fest")}</h2>
-          <p>Заявка одобрена администратором. Этот билет можно сохранить в PDF и показать при регистрации на площадке.</p>
+          <p>Заявка одобрена администратором. При входе билет сверяется по ID, контрольному коду и данным автомобиля.</p>
         </div>
         <div class="ticket-code-box">
           <small>ID заявки</small>
           <strong>${escapeText(code)}</strong>
+          <span>${escapeText(secureCode)}</span>
+        </div>
+      </section>
+
+      <section class="ticket-security-row">
+        <div class="ticket-barcode-box">
+          ${ticketBarcode(application)}
+          <small>${escapeText(secureCode)}</small>
+        </div>
+        <div class="ticket-verify-box">
+          ${makeQrSvg(ticketVerifyUrl(application))}
+          <div>
+            <small>QR проверка</small>
+            <strong>${escapeText(secureCode.split("-").slice(-2).join("-"))}</strong>
+            <span>Открывается только с admin-доступом</span>
+          </div>
         </div>
       </section>
 
@@ -835,9 +1138,13 @@ function ticketMarkup(application) {
         </div>
         <div class="ticket-field">
           <small>Контрольный код</small>
-          <strong>${escapeText(code)}-${String(application?.participant || state.profile?.id || 0).padStart(4, "0")}</strong>
+          <strong>${escapeText(secureCode)}</strong>
         </div>
       </section>
+
+      <div class="ticket-microtext" aria-hidden="true">
+        ${Array.from({ length: 8 }, () => `SAMARKAND FEST • ${secureCode} • VALID ONLY WITH APPROVED APPLICATION`).join(" • ")}
+      </div>
 
       <footer class="ticket-footer">
         <span>Действителен только для указанной заявки и автомобиля.</span>
@@ -858,9 +1165,12 @@ function ticketPrintDocument(application) {
         <style>
           * { box-sizing: border-box; }
           body { margin: 0; padding: 28px; background: #f3f4f6; color: #111317; font-family: Arial, sans-serif; }
-          .festival-ticket { position: relative; overflow: hidden; width: min(980px, 100%); margin: 0 auto; padding: 30px; border: 1px solid #e4e6eb; border-radius: 14px; background: #fff; box-shadow: 0 18px 50px rgba(15, 18, 25, .12); }
+          .festival-ticket { position: relative; overflow: hidden; display: grid; gap: 22px; width: min(980px, 100%); margin: 0 auto; padding: 30px; border: 1px solid #e4e6eb; border-radius: 14px; background: linear-gradient(135deg, rgba(230, 0, 35, .045), transparent 26%), repeating-linear-gradient(45deg, rgba(16, 17, 20, .025) 0 1px, transparent 1px 9px), #fff; box-shadow: 0 18px 50px rgba(15, 18, 25, .12); }
+          .festival-ticket::before, .festival-ticket::after { position: absolute; top: 50%; z-index: 2; width: 28px; height: 28px; border: 1px solid #e4e6eb; border-radius: 50%; background: #f3f4f6; content: ""; }
+          .festival-ticket::before { left: -15px; } .festival-ticket::after { right: -15px; }
           .ticket-watermark { position: absolute; right: -30px; bottom: 18px; color: rgba(230, 0, 35, .06); font-size: 68px; font-weight: 900; letter-spacing: 3px; transform: rotate(-8deg); }
-          .ticket-header, .ticket-main, .ticket-grid, .ticket-footer { position: relative; z-index: 1; }
+          .ticket-security-pattern { position: absolute; inset: 12px; border: 1px solid rgba(230, 0, 35, .12); border-radius: 10px; background: repeating-linear-gradient(90deg, transparent 0 18px, rgba(230, 0, 35, .045) 18px 19px), repeating-linear-gradient(0deg, transparent 0 18px, rgba(5, 6, 8, .035) 18px 19px); }
+          .ticket-header, .ticket-main, .ticket-security-row, .ticket-grid, .ticket-footer, .ticket-microtext { position: relative; z-index: 1; }
           .ticket-header, .ticket-main, .ticket-footer, .ticket-brand, .ticket-status { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
           .ticket-brand img { width: 78px; height: 78px; object-fit: contain; }
           .ticket-brand strong { display: block; font-size: 25px; }
@@ -872,13 +1182,23 @@ function ticketPrintDocument(application) {
           .ticket-main p { max-width: 580px; margin: 0; color: #464c57; line-height: 1.55; }
           .ticket-code-box { min-width: 190px; padding: 18px; border-radius: 12px; background: #111317; color: #fff; text-align: center; }
           .ticket-code-box strong { display: block; margin-top: 6px; font-size: 28px; letter-spacing: .08em; }
+          .ticket-code-box span { display: block; margin-top: 8px; color: rgba(255, 255, 255, .72); font-size: 11px; font-weight: 900; letter-spacing: .08em; }
+          .ticket-security-row { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr); gap: 12px; }
+          .ticket-barcode-box, .ticket-verify-box { min-width: 0; border: 1px dashed #cfd3dc; border-radius: 10px; background: rgba(255, 255, 255, .86); }
+          .ticket-barcode-box { display: grid; gap: 8px; padding: 13px; }
+          .ticket-barcode { width: 100%; height: 66px; fill: #111317; }
+          .ticket-barcode-box small, .ticket-verify-box small, .ticket-verify-box span { color: #6b7280; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+          .ticket-verify-box { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 12px; }
+          .ticket-qr-code { width: 82px; height: 82px; padding: 8px; border: 1px solid #111317; border-radius: 8px; background: #fff; }
+          .ticket-verify-box strong { display: block; margin: 5px 0; color: #111317; font-size: 20px; letter-spacing: .06em; }
           .ticket-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
           .ticket-field { padding: 16px; border: 1px solid #e4e6eb; border-radius: 10px; background: #fff; }
           .ticket-field-wide { grid-column: span 2; }
           .ticket-field strong { display: block; margin-top: 7px; font-size: 18px; }
+          .ticket-microtext { overflow: hidden; white-space: nowrap; border-top: 1px solid rgba(230, 0, 35, .16); border-bottom: 1px solid rgba(230, 0, 35, .16); color: rgba(230, 0, 35, .52); font-size: 8px; font-weight: 950; letter-spacing: .14em; line-height: 18px; }
           .ticket-footer { margin-top: 22px; padding-top: 14px; border-top: 1px dashed #cfd3dc; }
           @media print { body { padding: 0; background: #fff; } .festival-ticket { width: 100%; box-shadow: none; border-radius: 0; } }
-          @media (max-width: 680px) { body { padding: 12px; } .ticket-header, .ticket-main, .ticket-footer { align-items: flex-start; flex-direction: column; } .ticket-grid { grid-template-columns: 1fr; } .ticket-field-wide { grid-column: auto; } }
+          @media (max-width: 680px) { body { padding: 12px; } .ticket-header, .ticket-main, .ticket-footer { align-items: flex-start; flex-direction: column; } .ticket-security-row, .ticket-grid { grid-template-columns: 1fr; } .ticket-field-wide { grid-column: auto; } }
         </style>
       </head>
       <body>${ticketMarkup(application)}</body>
@@ -1307,6 +1627,111 @@ async function renderAdminPage() {
   }
 }
 
+function renderVerifyResult(stateName, payload = {}) {
+  const result = $("#verifyResult");
+  if (!result) return;
+  if (stateName === "loading") {
+    result.className = "verify-card reveal";
+    result.innerHTML = `
+      <span class="icon-badge" data-icon="ticket"></span>
+      <div>
+        <h2>Проверяем билет</h2>
+        <p class="muted">Подождите несколько секунд.</p>
+      </div>
+    `;
+  } else if (stateName === "login") {
+    result.className = "verify-card reveal";
+    result.innerHTML = `
+      <span class="icon-badge" data-icon="shield"></span>
+      <div>
+        <h2>Нужен вход администратора</h2>
+        <p class="muted">После входа билет проверится автоматически.</p>
+      </div>
+    `;
+  } else if (stateName === "valid") {
+    const application = payload.application || {};
+    const cars = applicationCarsText(application);
+    result.className = "verify-card verify-valid reveal";
+    result.innerHTML = `
+      <span class="icon-badge" data-icon="shield"></span>
+      <div>
+        <p class="eyebrow">Билет действителен</p>
+        <h2>${escapeText(application.participant_name || "Участник")}</h2>
+        <div class="verify-fields">
+          <span><b>ID</b>${escapeText(ticketApplicationId(application))}</span>
+          <span><b>Код</b>${escapeText(payload.secure_code || "")}</span>
+          <span><b>Телефон</b>${escapeText(application.phone || "Не указан")}</span>
+          <span><b>Авто / категория</b>${escapeText(cars)}</span>
+          <span><b>Статус</b>${escapeText(ticketStatusLabel(application))}</span>
+        </div>
+      </div>
+    `;
+  } else {
+    result.className = "verify-card verify-invalid reveal";
+    result.innerHTML = `
+      <span class="icon-badge" data-icon="shield"></span>
+      <div>
+        <p class="eyebrow">Билет не прошел проверку</p>
+        <h2>Проверка отклонена</h2>
+        <p class="muted">${escapeText(payload.detail || "QR-код поврежден, подделан или заявка не одобрена.")}</p>
+      </div>
+    `;
+  }
+  hydrateIcons(result);
+}
+
+async function verifyTicketFromQr() {
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get("i") || params.get("id");
+  const code = params.get("c") || params.get("code");
+  const loginForm = $("#verifyLoginForm");
+  if (!id || !code) {
+    if (loginForm) loginForm.hidden = true;
+    renderVerifyResult("invalid", { detail: "В QR-коде нет данных билета." });
+    return;
+  }
+  if (!state.adminToken) {
+    if (loginForm) loginForm.hidden = false;
+    renderVerifyResult("login");
+    return;
+  }
+  if (loginForm) loginForm.hidden = true;
+  renderVerifyResult("loading");
+  try {
+    const payload = await adminApi(`/admin/tickets/${id}/verify/?code=${encodeURIComponent(code)}`);
+    renderVerifyResult(payload.valid ? "valid" : "invalid", payload);
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) {
+      state.adminToken = "";
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+      if (loginForm) loginForm.hidden = false;
+      renderVerifyResult("login");
+      return;
+    }
+    renderVerifyResult("invalid", { detail: error.message });
+  }
+}
+
+async function handleVerifyLogin(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const message = $("#verifyLoginMessage");
+  const payload = Object.fromEntries(new FormData(form).entries());
+  if (message) message.textContent = "";
+  try {
+    const data = await api("/admin/login/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    state.adminToken = data.token;
+    localStorage.setItem(ADMIN_STORAGE_KEY, data.token);
+    await verifyTicketFromQr();
+  } catch (error) {
+    if (message) message.textContent = error.message;
+  }
+}
+
 async function handleProfileEdit(event) {
   event.preventDefault();
   if (!state.profile) return;
@@ -1519,9 +1944,11 @@ async function handleCarCreate(event) {
   event.preventDefault();
   if (!state.profile) return;
   const form = event.currentTarget;
-  if (!form.purpose.value) {
+  const purposeSelect = form.querySelector('[name="purpose"]');
+  const purpose = purposeSelect?.value?.trim() || "";
+  if (!purpose) {
     $("#carMessage").textContent = "Выберите, для чего машина.";
-    form.purpose.focus();
+    purposeSelect?.focus();
     return;
   }
   const files = Array.from(form.uploaded_photos.files || []);
@@ -1532,9 +1959,10 @@ async function handleCarCreate(event) {
   }
   const body = new FormData();
   body.append("owner", state.profile.id);
-  ["make", "model", "year", "engine", "purpose", "condition", "tuning_details"].forEach((name) => {
+  ["make", "model", "year", "engine", "condition", "tuning_details"].forEach((name) => {
     body.append(name, form[name].value);
   });
+  body.append("purpose", purpose);
   files.slice(0, 5).forEach((file) => {
     body.append("uploaded_photos", file, file.name);
   });
@@ -1594,6 +2022,62 @@ async function handleApply(event) {
   }
 }
 
+async function handleProfileApply(event) {
+  event.preventDefault();
+  const message = $("#profileApplyMessage");
+  if (!state.profile) return;
+  const form = event.currentTarget;
+  const festivalId = Number(form.festival?.value);
+  const selected = Array.from(form.querySelectorAll('input[name="cars"]:checked')).map((input) => Number(input.value));
+  if (!festivalId) {
+    if (message) message.textContent = "Выбери фестиваль.";
+    form.festival?.focus();
+    return;
+  }
+  if (!selected.length) {
+    if (message) message.textContent = "Выбери хотя бы одно авто для заявки.";
+    return;
+  }
+
+  const firstCar = state.profile.cars.find((car) => Number(car.id) === selected[0]);
+  if (!firstCar) {
+    if (message) message.textContent = "Выбранное авто не найдено. Обнови страницу и попробуй еще раз.";
+    return;
+  }
+
+  const button = form.querySelector('button[type="submit"]');
+  if (button) button.disabled = true;
+  try {
+    await api("/applications/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        festival: festivalId,
+        participant: state.profile.id,
+        cars: selected,
+        participant_name: state.profile.full_name,
+        phone: state.profile.phone,
+        telegram: state.profile.telegram || "",
+        city: state.profile.city || "",
+        car_make: firstCar.make,
+        car_model: firstCar.model,
+        car_year: firstCar.year,
+        engine: firstCar.engine,
+        condition: firstCar.condition,
+        tuning_details: firstCar.tuning_details || "",
+      }),
+    });
+    await loadApplications();
+    renderProfile();
+    $("#profileApplyMessage").textContent = "Заявка отправлена. Статус появится ниже в списке.";
+    toast("Заявка отправлена на модерацию");
+  } catch (error) {
+    if (message) message.textContent = error.message;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function logout() {
   state.profile = null;
   state.applications = [];
@@ -1617,6 +2101,7 @@ function bindEvents() {
   $("#profileEditToggle")?.addEventListener("click", toggleProfileEdit);
   $("#profileEditForm")?.addEventListener("submit", handleProfileEdit);
   $("#carForm")?.addEventListener("submit", handleCarCreate);
+  $("#profileApplyForm")?.addEventListener("submit", handleProfileApply);
   $("#garagePreview")?.addEventListener("click", handleCarDelete);
   $("#applicationsList")?.addEventListener("click", handleTicketClick);
   $("#applyForm")?.addEventListener("submit", handleApply);
@@ -1624,6 +2109,7 @@ function bindEvents() {
   $("#commentsBox")?.addEventListener("click", handleCommentDelete);
   $("#logoutButton")?.addEventListener("click", logout);
   $("#adminLoginForm")?.addEventListener("submit", handleAdminLogin);
+  $("#verifyLoginForm")?.addEventListener("submit", handleVerifyLogin);
   $("#adminSearch")?.addEventListener("input", (event) => {
     state.adminSearch = event.target.value;
     renderAdminApplications();
@@ -1708,6 +2194,7 @@ async function boot() {
     if (state.profile) setInterval(markProfileSeen, 60000);
   }
   if (page === "admin") renderAdminPage();
+  if (page === "verify") verifyTicketFromQr();
 }
 
 boot();

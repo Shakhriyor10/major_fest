@@ -138,10 +138,17 @@ class ParticipantCarSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "uploaded_photos": "Добавьте хотя бы одно фото автомобиля."
             })
-        if self.instance is None and not attrs.get("purpose"):
+        purpose = attrs.get("purpose") or self.initial_data.get("purpose")
+        if self.instance is None and not purpose:
             raise serializers.ValidationError({
                 "purpose": "Выберите, для чего машина."
             })
+        if purpose and purpose not in ParticipantCar.Purpose.values:
+            raise serializers.ValidationError({
+                "purpose": "Выберите значение из списка."
+            })
+        if self.instance is None and purpose and not attrs.get("purpose"):
+            attrs["purpose"] = purpose
         return attrs
 
     def validate_year(self, year):
