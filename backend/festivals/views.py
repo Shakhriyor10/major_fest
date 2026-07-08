@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate, get_user_model
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
+from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -148,6 +149,88 @@ class AdminApplicationListView(APIView):
         return Response(serializer.data)
 
 
+class AdminApplicationCreateView(APIView):
+    def post(self, request):
+        _user, error = require_admin(request)
+        if error:
+            return error
+
+        data = request.data
+        required_fields = [
+            "festival",
+            "full_name",
+            "phone",
+            "car_make",
+            "car_model",
+            "car_year",
+            "engine",
+            "purpose",
+            "condition",
+        ]
+        missing = [field for field in required_fields if not str(data.get(field, "")).strip()]
+        if missing:
+            return Response({field: "РћР±СЏР·Р°С‚РµР»СЊРЅРѕРµ РїРѕР»Рµ." for field in missing}, status=status.HTTP_400_BAD_REQUEST)
+
+        purpose = str(data.get("purpose", "")).strip()
+        if purpose not in ParticipantCar.Purpose.values:
+            return Response({"purpose": "Р’С‹Р±РµСЂРёС‚Рµ Р·РЅР°С‡РµРЅРёРµ РёР· СЃРїРёСЃРєР°."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            car_year = int(data.get("car_year"))
+        except (TypeError, ValueError):
+            return Response({"car_year": "РЈРєР°Р¶РёС‚Рµ РіРѕРґ С‡РёСЃР»РѕРј."}, status=status.HTTP_400_BAD_REQUEST)
+        if car_year < 1900 or car_year > 2026:
+            return Response({"car_year": "Р“РѕРґ Р°РІС‚РѕРјРѕР±РёР»СЏ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РѕС‚ 1900 РґРѕ 2026."}, status=status.HTTP_400_BAD_REQUEST)
+
+        festival = get_object_or_404(Festival, pk=data.get("festival"))
+        phone = str(data.get("phone", "")).strip()
+        full_name = str(data.get("full_name", "")).strip()
+
+        with transaction.atomic():
+            profile, _created = ParticipantProfile.objects.update_or_create(
+                phone=phone,
+                defaults={
+                    "full_name": full_name,
+                    "telegram": str(data.get("telegram", "")).strip(),
+                    "city": str(data.get("city", "")).strip(),
+                },
+            )
+            car = ParticipantCar.objects.create(
+                owner=profile,
+                make=str(data.get("car_make", "")).strip(),
+                model=str(data.get("car_model", "")).strip(),
+                year=car_year,
+                engine=str(data.get("engine", "")).strip(),
+                purpose=purpose,
+                condition=str(data.get("condition", "")).strip(),
+                tuning_details=str(data.get("tuning_details", "")).strip(),
+            )
+            application = FestivalApplication.objects.create(
+                festival=festival,
+                participant=profile,
+                participant_name=profile.full_name,
+                phone=profile.phone,
+                telegram=profile.telegram,
+                city=profile.city,
+                car_make=car.make,
+                car_model=car.model,
+                car_year=car.year,
+                engine=car.engine,
+                condition=car.condition,
+                tuning_details=car.tuning_details,
+                status=FestivalApplication.Status.APPROVED,
+                moderator_note="Р—Р°СЏРІРєР° РґРѕР±Р°РІР»РµРЅР° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј.",
+            )
+            application.cars.set([car])
+
+        application = (
+            FestivalApplication.objects.select_related("festival", "participant")
+            .prefetch_related("cars__photos", "participant__cars__photos", "photos")
+            .get(pk=application.pk)
+        )
+        return Response(AdminFestivalApplicationSerializer(application, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+
 class AdminSummaryView(APIView):
     def get(self, request):
         _user, error = require_admin(request)
@@ -159,6 +242,37 @@ class AdminSummaryView(APIView):
             "profiles_online": ParticipantProfile.objects.filter(last_seen_at__gte=online_since).count(),
             "online_window_minutes": ONLINE_WINDOW_MINUTES,
         })
+
+
+class AdminProfileListView(APIView):
+    def get(self, request):
+        _user, error = require_admin(request)
+        if error:
+            return error
+        queryset = (
+            ParticipantProfile.objects.prefetch_related("cars__photos")
+            .annotate(applications_count=Count("applications", distinct=True))
+            .order_by("-created_at")
+        )
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(full_name__icontains=search)
+                | Q(phone__icontains=search)
+                | Q(telegram__icontains=search)
+                | Q(city__icontains=search)
+                | Q(cars__make__icontains=search)
+                | Q(cars__model__icontains=search)
+            ).distinct()
+        profiles = list(queryset)
+        serializer = ParticipantProfileSerializer(profiles, many=True, context={"request": request})
+        data = serializer.data
+        applications_by_profile = {profile.id: profile.applications_count for profile in profiles}
+        for item in data:
+            applications_count = applications_by_profile.get(item["id"], 0)
+            item["applications_count"] = applications_count
+            item["has_applications"] = applications_count > 0
+        return Response(data)
 
 
 class AdminApplicationDetailView(APIView):

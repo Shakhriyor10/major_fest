@@ -11,6 +11,7 @@ const state = {
   selectedFestival: null,
   selectedCars: new Set(),
   adminApplications: [],
+  adminProfiles: [],
   adminSummary: null,
   adminFilter: "all",
   adminSearch: "",
@@ -831,7 +832,7 @@ function applicationCarsText(application) {
 }
 
 function applicationLastSeen(application) {
-  return formatLastSeen(application?.participant_detail?.last_seen_at);
+  return formatLastSeen(application?.participant_detail?.last_seen_at || application?.last_seen_at);
 }
 
 function ticketStatusLabel(application) {
@@ -844,8 +845,8 @@ function ticketStatusLabel(application) {
   return labels[application?.status] || application?.status || "В ожидании";
 }
 
-function applicationOwnerName() {
-  return state.profile?.full_name || state.profile?.phone || "Участник фестиваля";
+function applicationOwnerName(application) {
+  return application?.participant_name || state.profile?.full_name || application?.phone || state.profile?.phone || "Участник фестиваля";
 }
 
 function ticketSecuritySeed(application) {
@@ -1059,6 +1060,12 @@ function ticketVerifyUrl(application) {
   return url.toString();
 }
 
+function ticketQrMarkup(application) {
+  const verifyUrl = ticketVerifyUrl(application);
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=16&data=${encodeURIComponent(verifyUrl)}`;
+  return `<img class="ticket-qr-code" src="${qrUrl}" alt="QR код проверки билета" loading="eager" referrerpolicy="no-referrer" />`;
+}
+
 function ticketMarkup(application) {
   const festival = applicationFestival(application);
   const place = festival.location || festival.city || "Samarkand Touristic Centre";
@@ -1066,8 +1073,8 @@ function ticketMarkup(application) {
   const code = ticketApplicationId(application);
   const secureCode = ticketSecureCode(application);
   const status = ticketStatusLabel(application);
-  const owner = applicationOwnerName();
-  const phone = state.profile?.phone || "Телефон не указан";
+  const owner = applicationOwnerName(application);
+  const phone = application?.phone || state.profile?.phone || "Телефон не указан";
   const cars = applicationCarsText(application);
   return `
     <article class="festival-ticket">
@@ -1106,7 +1113,7 @@ function ticketMarkup(application) {
           <small>${escapeText(secureCode)}</small>
         </div>
         <div class="ticket-verify-box">
-          ${makeQrSvg(ticketVerifyUrl(application))}
+          ${ticketQrMarkup(application)}
           <div>
             <small>QR проверка</small>
             <strong>${escapeText(secureCode.split("-").slice(-2).join("-"))}</strong>
@@ -1183,13 +1190,13 @@ function ticketPrintDocument(application) {
           .ticket-code-box { min-width: 190px; padding: 18px; border-radius: 12px; background: #111317; color: #fff; text-align: center; }
           .ticket-code-box strong { display: block; margin-top: 6px; font-size: 28px; letter-spacing: .08em; }
           .ticket-code-box span { display: block; margin-top: 8px; color: rgba(255, 255, 255, .72); font-size: 11px; font-weight: 900; letter-spacing: .08em; }
-          .ticket-security-row { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr); gap: 12px; }
+          .ticket-security-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(480px, 1fr); gap: 12px; }
           .ticket-barcode-box, .ticket-verify-box { min-width: 0; border: 1px dashed #cfd3dc; border-radius: 10px; background: rgba(255, 255, 255, .86); }
           .ticket-barcode-box { display: grid; gap: 8px; padding: 13px; }
           .ticket-barcode { width: 100%; height: 66px; fill: #111317; }
           .ticket-barcode-box small, .ticket-verify-box small, .ticket-verify-box span { color: #6b7280; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-          .ticket-verify-box { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 12px; }
-          .ticket-qr-code { width: 82px; height: 82px; padding: 8px; border: 1px solid #111317; border-radius: 8px; background: #fff; }
+          .ticket-verify-box { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 14px; }
+          .ticket-qr-code { width: 220px; height: 220px; border: 1px solid #111317; border-radius: 8px; background: #fff; object-fit: contain; shape-rendering: crispEdges; }
           .ticket-verify-box strong { display: block; margin: 5px 0; color: #111317; font-size: 20px; letter-spacing: .06em; }
           .ticket-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
           .ticket-field { padding: 16px; border: 1px solid #e4e6eb; border-radius: 10px; background: #fff; }
@@ -1240,7 +1247,7 @@ function printTicket() {
   popup.document.write(ticketPrintDocument(application));
   popup.document.close();
   popup.focus();
-  setTimeout(() => popup.print(), 350);
+  setTimeout(() => popup.print(), 1200);
 }
 
 async function loadAdminApplications() {
@@ -1252,6 +1259,14 @@ async function loadAdminApplications() {
   const query = params.toString() ? `?${params}` : "";
   const payload = await adminApi(`/admin/applications/${query}`);
   state.adminApplications = Array.isArray(payload) ? payload : payload.results || [];
+}
+
+async function loadAdminProfiles() {
+  const params = new URLSearchParams();
+  if (state.adminSearch.trim()) params.set("search", state.adminSearch.trim());
+  const query = params.toString() ? `?${params}` : "";
+  const payload = await adminApi(`/admin/profiles/${query}`);
+  state.adminProfiles = Array.isArray(payload) ? payload : payload.results || [];
 }
 
 async function loadAdminSummary() {
@@ -1293,9 +1308,81 @@ function filteredAdminApplications() {
   });
 }
 
+function renderAdminProfiles() {
+  const list = $("#adminProfiles");
+  if (!list) return;
+  const profiles = state.adminProfiles;
+  if (!profiles.length) {
+    list.innerHTML = `
+      <article class="empty-card">
+        <span class="icon-badge" data-icon="user"></span>
+        <p>Пользователи не найдены.</p>
+      </article>
+    `;
+    hydrateIcons(list);
+    return;
+  }
+  list.innerHTML = profiles.map((profile) => {
+    const photo = mediaUrl(profile.photo);
+    const cars = profile.cars?.length
+      ? profile.cars.map((car) => {
+        const name = `${car.make || ""} ${car.model || ""} ${car.year || ""}`.trim();
+        const purpose = carPurposeLabels[car.purpose] || "";
+        return [name, purpose].filter(Boolean).join(" - ");
+      }).join(", ")
+      : "Авто не добавлено";
+    const applicationsCount = Number(profile.applications_count || 0);
+    return `
+      <article class="admin-profile-card">
+        <div class="admin-profile-card-head">
+          ${photo ? `<img src="${photo}" alt="${escapeText(profile.full_name || "Пользователь")}" />` : `<span class="profile-avatar-fallback">${getInitial(profile.full_name || profile.phone)}</span>`}
+          <div>
+            <strong>${escapeText(profile.full_name || "Без имени")}</strong>
+            <span>${escapeText(profile.phone || "Телефон не указан")}</span>
+          </div>
+          <small class="${applicationsCount ? "admin-profile-has-app" : "admin-profile-no-app"}">${applicationsCount ? `${applicationsCount} заявок` : "Без заявки"}</small>
+        </div>
+        <div class="admin-profile-meta">
+          <span><b>Telegram</b>${escapeText(profile.telegram || "Не указан")}</span>
+          <span><b>Город</b>${escapeText(profile.city || "Не указан")}</span>
+          <span><b>Последний раз</b>${applicationLastSeen(profile)}</span>
+          <span><b>Авто</b>${escapeText(cars)}</span>
+        </div>
+        <form class="admin-password-form admin-profile-password-form" data-profile-id="${profile.id}">
+          <input name="password" type="password" placeholder="Новый пароль" minlength="6" required />
+          <button class="glass-button" type="submit">Сменить пароль</button>
+          <p class="form-message"></p>
+        </form>
+      </article>
+    `;
+  }).join("");
+  hydrateIcons(list);
+}
+
+function renderAdminCreateForm() {
+  const select = $("#adminCreateFestival");
+  if (!select) return;
+  const festivals = state.festivals || [];
+  if (!festivals.length) {
+    select.innerHTML = `<option value="">Фестиваль не найден</option>`;
+    return;
+  }
+  select.innerHTML = `
+    <option value="">Выберите фестиваль</option>
+    ${festivals.map((festival) => `
+      <option value="${festival.id}">${escapeText(festival.title || "Samarkand Fest")}</option>
+    `).join("")}
+  `;
+  if (festivals.length === 1) select.value = String(festivals[0].id);
+}
+
 function adminStatusActions(application) {
   if (application.status === "approved") {
     return `
+      <button class="primary-button" type="button" data-admin-ticket="${application.id}">
+        <span class="icon" data-icon="ticket"></span>
+        <span>Скачать билет</span>
+      </button>
       <button class="glass-button danger-button" type="button" data-admin-status="reviewing" data-admin-cancel="true" data-application-id="${application.id}">Отменить</button>
     `;
   }
@@ -1309,8 +1396,9 @@ function adminStatusActions(application) {
 function syncAdminStatusActions(container, application) {
   const actions = container.querySelector(".admin-card-actions");
   if (!actions) return;
-  actions.querySelectorAll("[data-admin-status]").forEach((button) => button.remove());
+  actions.querySelectorAll("[data-admin-status], [data-admin-ticket]").forEach((button) => button.remove());
   actions.insertAdjacentHTML("beforeend", adminStatusActions(application));
+  hydrateIcons(actions);
 }
 
 function syncAdminActivity(container, application) {
@@ -1337,8 +1425,15 @@ function renderAdminApplications() {
   list.innerHTML = applications.map((application) => {
     const status = applicationStatus(application);
     const cars = application.cars_detail?.length
-      ? application.cars_detail.map((car) => `${car.make} ${car.model} ${car.year}`).join(", ")
+      ? application.cars_detail.map((car) => {
+        const carName = `${car.make || ""} ${car.model || ""} ${car.year || ""}`.trim();
+        const purpose = carPurposeLabels[car.purpose] || "";
+        return [carName, purpose].filter(Boolean).join(" - ");
+      }).join(", ")
       : `${application.car_make} ${application.car_model} ${application.car_year || ""}`.trim();
+    const carPurposes = application.cars_detail?.length
+      ? [...new Set(application.cars_detail.map((car) => carPurposeLabels[car.purpose]).filter(Boolean))].join(", ")
+      : "";
     return `
       <article class="admin-application application-${application.status}" data-application-id="${application.id}">
         <button class="admin-application-photo" type="button" data-image-open="${applicationPhoto(application)}" data-image-title="${escapeText(cars || application.car_make || "Авто")}">
@@ -1359,6 +1454,7 @@ function renderAdminApplications() {
             <span><b>Авто</b>${cars || "Не указано"}</span>
           </div>
           <div class="admin-car-details">
+            ${carPurposes ? `<p><b>Категория:</b> ${escapeText(carPurposes)}</p>` : ""}
             <p><b>Двигатель:</b> ${application.engine || "Не указан"}</p>
             <p><b>Состояние:</b> ${application.condition || "Не указано"}</p>
             ${application.tuning_details ? `<p><b>Тюнинг:</b> ${application.tuning_details}</p>` : ""}
@@ -1482,9 +1578,7 @@ function renderAdminDetail(application) {
         </button>
         ${renderAdminGallery(application)}
         <div class="admin-card-actions admin-detail-actions">
-          <button class="primary-button" type="button" data-admin-status="approved" data-application-id="${application.id}">Принять</button>
-          <button class="glass-button danger-button" type="button" data-admin-status="rejected" data-application-id="${application.id}">Отказать</button>
-          <button class="glass-button" type="button" data-admin-status="reviewing" data-application-id="${application.id}">В ожидание</button>
+          ${adminStatusActions(application)}
         </div>
       </aside>
       <section class="admin-detail-main">
@@ -1552,6 +1646,7 @@ function closeAdminDetail() {
 async function handleAdminApplicationClick(event) {
   const imageButton = event.target.closest("[data-image-open]");
   const detailButton = event.target.closest("[data-admin-detail]");
+  const ticketButton = event.target.closest("[data-admin-ticket]");
   const statusButton = event.target.closest("[data-admin-status]");
   if (imageButton) {
     openImageViewer(imageButton.dataset.imageOpen, imageButton.dataset.imageTitle || "Фото автомобиля");
@@ -1559,6 +1654,17 @@ async function handleAdminApplicationClick(event) {
   }
   if (detailButton) {
     await openAdminDetail(detailButton.dataset.adminDetail);
+    return;
+  }
+  if (ticketButton) {
+    const ticketId = Number(ticketButton.dataset.adminTicket);
+    const application = state.adminApplications.find((item) => Number(item.id) === Number(ticketButton.dataset.adminTicket))
+      || (Number(state.selectedAdminApplication?.id) === ticketId ? state.selectedAdminApplication : null);
+    if (application?.status !== "approved") {
+      toast("Билет доступен только после принятия заявки");
+      return;
+    }
+    openTicket(application);
     return;
   }
   if (statusButton) {
@@ -1570,11 +1676,11 @@ async function handleAdminApplicationClick(event) {
 }
 
 async function handleAdminPasswordChange(event) {
-  const form = event.target.closest("#adminPasswordForm");
+  const form = event.target.closest(".admin-password-form");
   if (!form) return;
   event.preventDefault();
   const profileId = form.dataset.profileId;
-  const message = $("#adminPasswordMessage");
+  const message = form.querySelector(".form-message") || $("#adminPasswordMessage");
   if (!profileId) {
     if (message) message.textContent = "Профиль пользователя не найден.";
     return;
@@ -1594,14 +1700,55 @@ async function handleAdminPasswordChange(event) {
   }
 }
 
+async function handleAdminCreateApplication(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const message = $("#adminCreateMessage");
+  const button = form.querySelector('button[type="submit"]');
+  const data = Object.fromEntries(new FormData(form).entries());
+  if (data.phone && !data.phone.trim().startsWith("+")) data.phone = `+${data.phone.trim()}`;
+  if (button) button.disabled = true;
+  if (message) message.textContent = "";
+  try {
+    const application = await adminApi("/admin/applications/create/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    form.reset();
+    renderAdminCreateForm();
+    await loadAdminSummary();
+    await loadAdminApplications();
+    await loadAdminProfiles();
+    renderAdminApplications();
+    renderAdminProfiles();
+    openTicket(application);
+    if (message) message.textContent = "Участник добавлен, заявка принята. Билет открыт.";
+    toast("Заявка создана, билет готов");
+  } catch (error) {
+    if (message) message.textContent = error.message;
+    toast(error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function renderAdminPage() {
   $("#adminLoginForm")?.toggleAttribute("hidden", Boolean(state.adminToken));
   $("#adminPanel")?.toggleAttribute("hidden", !state.adminToken);
   if (!state.adminToken) return;
   try {
+    try {
+      await loadFestivals();
+    } catch (error) {
+      console.warn("Festival data is unavailable for admin tickets", error);
+    }
+    renderAdminCreateForm();
     await loadAdminSummary();
     await loadAdminApplications();
+    await loadAdminProfiles();
     renderAdminApplications();
+    renderAdminProfiles();
   } catch (error) {
     const needsLogin = error.status === 401 || error.status === 403 || /Нужен вход|администратор|admin/i.test(error.message);
     if (needsLogin) {
@@ -2109,10 +2256,12 @@ function bindEvents() {
   $("#commentsBox")?.addEventListener("click", handleCommentDelete);
   $("#logoutButton")?.addEventListener("click", logout);
   $("#adminLoginForm")?.addEventListener("submit", handleAdminLogin);
+  $("#adminCreateApplicationForm")?.addEventListener("submit", handleAdminCreateApplication);
   $("#verifyLoginForm")?.addEventListener("submit", handleVerifyLogin);
   $("#adminSearch")?.addEventListener("input", (event) => {
     state.adminSearch = event.target.value;
     renderAdminApplications();
+    renderAdminProfiles();
   });
   $("#adminFilters")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-admin-filter]");
@@ -2122,6 +2271,7 @@ function bindEvents() {
     renderAdminApplications();
   });
   $("#adminApplications")?.addEventListener("click", handleAdminApplicationClick);
+  $("#adminProfiles")?.addEventListener("submit", handleAdminPasswordChange);
   $("#adminDetailContent")?.addEventListener("click", handleAdminApplicationClick);
   $("#adminDetailContent")?.addEventListener("submit", handleAdminPasswordChange);
   $("#adminDetailClose")?.addEventListener("click", closeAdminDetail);

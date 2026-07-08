@@ -4,8 +4,10 @@ from django.urls import path
 
 from .views import (
     AdminApplicationDetailView,
+    AdminApplicationCreateView,
     AdminApplicationListView,
     AdminLoginView,
+    AdminProfileListView,
     AdminProfilePasswordView,
     AdminSummaryView,
     AdminTicketVerifyView,
@@ -33,6 +35,8 @@ urlpatterns = [
     path("auth/login/", AuthLoginView.as_view(), name="auth-login"),
     path("admin/login/", AdminLoginView.as_view(), name="admin-login"),
     path("admin/summary/", AdminSummaryView.as_view(), name="admin-summary"),
+    path("admin/profiles/", AdminProfileListView.as_view(), name="admin-profiles"),
+    path("admin/applications/create/", AdminApplicationCreateView.as_view(), name="admin-application-create"),
     path("admin/applications/", AdminApplicationListView.as_view(), name="admin-applications"),
     path("admin/applications/<int:pk>/", AdminApplicationDetailView.as_view(), name="admin-application-detail"),
     path("admin/tickets/<int:pk>/verify/", AdminTicketVerifyView.as_view(), name="admin-ticket-verify"),
