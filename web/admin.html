@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Админ заявки - Samarkand Fest</title>
-    <link rel="stylesheet" href="/web/styles.css?v=21" />
+    <link rel="stylesheet" href="/web/styles.css?v=25" />
   </head>
   <body data-page="admin">
     <div class="site-bg" aria-hidden="true"></div>
@@ -139,6 +139,12 @@
                   <option value="tuning">Тюнинг</option>
                 </select>
               </label>
+              <label class="admin-create-photos">
+                Фото автомобиля
+                <input name="photos" type="file" accept="image/*" multiple />
+                <small>Можно выбрать до 5 фото. Первое станет главным.</small>
+                <div class="admin-photos-preview" id="adminCreatePhotosPreview" aria-live="polite"></div>
+              </label>
             </div>
             <label>
               Состояние машины
@@ -232,6 +238,31 @@
         </div>
       </div>
     </div>
+    <div class="modal" id="adminCredentialsModal" hidden>
+      <div class="modal-panel admin-credentials-panel">
+        <div class="panel-head">
+          <div>
+            <h3>Данные пользователя</h3>
+            <p class="muted">Передайте участнику логин и пароль для входа в профиль.</p>
+          </div>
+          <button class="icon-only" id="adminCredentialsClose" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <div class="admin-credentials-box">
+          <div class="credential-row">
+            <small>Логин</small>
+            <strong id="adminCredentialLogin"></strong>
+          </div>
+          <div class="credential-row">
+            <small>Пароль</small>
+            <strong id="adminCredentialPassword"></strong>
+          </div>
+          <button class="primary-button" id="adminCredentialsCopyAll" type="button">
+            <span class="icon" data-icon="save"></span>
+            <span>Скопировать логин и пароль</span>
+          </button>
+        </div>
+      </div>
+    </div>
     <div class="modal" id="adminDetailModal" hidden>
       <div class="modal-panel admin-detail-panel">
         <div class="panel-head">
@@ -251,6 +282,6 @@
         <p id="imageViewerCaption"></p>
       </div>
     </div>
-    <script src="/web/app.js?v=25"></script>
+    <script src="/web/app.js?v=30"></script>
   </body>
 </html>

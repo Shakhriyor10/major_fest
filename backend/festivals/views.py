@@ -9,7 +9,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AppSettings, Festival, FestivalApplication, FestivalComment, ParticipantCar, ParticipantProfile
+from .models import AppSettings, ApplicationPhoto, Festival, FestivalApplication, FestivalComment, ParticipantCar, ParticipantCarPhoto, ParticipantProfile
 from .serializers import (
     AdminFestivalApplicationSerializer,
     AppSettingsSerializer,
@@ -183,18 +183,32 @@ class AdminApplicationCreateView(APIView):
             return Response({"car_year": "Р“РѕРґ Р°РІС‚РѕРјРѕР±РёР»СЏ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РѕС‚ 1900 РґРѕ 2026."}, status=status.HTTP_400_BAD_REQUEST)
 
         festival = get_object_or_404(Festival, pk=data.get("festival"))
-        phone = str(data.get("phone", "")).strip()
+        phone_digits = "".join(ch for ch in str(data.get("phone", "")) if ch.isdigit())
+        if len(phone_digits) < 7:
+            return Response({"phone": "Укажите номер телефона полностью."}, status=status.HTTP_400_BAD_REQUEST)
+        phone = f"+{phone_digits}"
+        raw_password = phone_digits
         full_name = str(data.get("full_name", "")).strip()
+        if ParticipantProfile.objects.filter(phone=phone).exists():
+            return Response({
+                "phone": "С этим номером уже есть профиль. Нельзя создать новую заявку через эту форму."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        photos = request.FILES.getlist("photos")
+        if len(photos) > 5:
+            return Response({"photos": "Можно добавить максимум 5 фото."}, status=status.HTTP_400_BAD_REQUEST)
+        for photo in photos:
+            if photo.size > 50 * 1024 * 1024:
+                return Response({"photos": "Размер одного фото не должен превышать 50 МБ."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            profile, _created = ParticipantProfile.objects.update_or_create(
+            profile = ParticipantProfile.objects.create(
                 phone=phone,
-                defaults={
-                    "full_name": full_name,
-                    "telegram": str(data.get("telegram", "")).strip(),
-                    "city": str(data.get("city", "")).strip(),
-                },
+                full_name=full_name,
+                telegram=str(data.get("telegram", "")).strip(),
+                city=str(data.get("city", "")).strip(),
             )
+            profile.set_password(raw_password)
+            profile.save(update_fields=["password_hash"])
             car = ParticipantCar.objects.create(
                 owner=profile,
                 make=str(data.get("car_make", "")).strip(),
@@ -222,13 +236,24 @@ class AdminApplicationCreateView(APIView):
                 moderator_note="Р—Р°СЏРІРєР° РґРѕР±Р°РІР»РµРЅР° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј.",
             )
             application.cars.set([car])
+            for index, photo in enumerate(photos):
+                car_photo = ParticipantCarPhoto.objects.create(car=car, image=photo)
+                ApplicationPhoto.objects.create(application=application, image=car_photo.image)
+                if index == 0 and not car.main_photo:
+                    car.main_photo = car_photo.image
+                    car.save(update_fields=["main_photo"])
 
         application = (
             FestivalApplication.objects.select_related("festival", "participant")
             .prefetch_related("cars__photos", "participant__cars__photos", "photos")
             .get(pk=application.pk)
         )
-        return Response(AdminFestivalApplicationSerializer(application, context={"request": request}).data, status=status.HTTP_201_CREATED)
+        response_data = AdminFestivalApplicationSerializer(application, context={"request": request}).data
+        response_data["admin_credentials"] = {
+            "login": phone,
+            "password": raw_password,
+        }
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
 
 class AdminSummaryView(APIView):

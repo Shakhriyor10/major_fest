@@ -1250,6 +1250,72 @@ textarea:focus {
   resize: vertical;
 }
 
+.admin-create-photos {
+  grid-column: 1 / -1;
+}
+
+.admin-create-photos input[type="file"] {
+  padding: 10px;
+  background: #fafafa;
+}
+
+.admin-create-photos small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.admin-photos-preview {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px dashed #cfd3dc;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.admin-photos-preview p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.admin-photos-preview.has-files {
+  border-color: rgba(22, 163, 74, 0.45);
+  background: #f0fdf4;
+}
+
+.admin-photos-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.admin-photos-preview figure {
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.admin-photos-preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.admin-photos-preview figcaption {
+  overflow: hidden;
+  padding: 7px 8px;
+  color: #343943;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .admin-create-card input:focus,
 .admin-create-card select:focus,
 .admin-create-card textarea:focus {
@@ -1266,6 +1332,39 @@ textarea:focus {
 
 .admin-create-actions .form-message {
   margin: 0;
+}
+
+.admin-credentials-panel {
+  width: min(520px, calc(100% - 24px));
+}
+
+.admin-credentials-box {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.credential-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.credential-row small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.credential-row strong {
+  color: var(--black);
+  font-size: 20px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
 }
 
 .admin-users-section {

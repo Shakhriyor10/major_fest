@@ -1227,6 +1227,48 @@ function closeTicketModal() {
   if (modal) modal.hidden = true;
 }
 
+function openAdminCredentials(credentials = {}) {
+  const modal = $("#adminCredentialsModal");
+  if (!modal) return;
+  $("#adminCredentialLogin").textContent = credentials.login || "";
+  $("#adminCredentialPassword").textContent = credentials.password || "";
+  modal.hidden = false;
+}
+
+function closeAdminCredentials() {
+  const modal = $("#adminCredentialsModal");
+  if (modal) modal.hidden = true;
+}
+
+async function copyText(value) {
+  if (!value) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.append(input);
+  input.select();
+  document.execCommand("copy");
+  input.remove();
+}
+
+async function handleCredentialsCopy(event) {
+  const copyAllButton = event.target.closest("#adminCredentialsCopyAll");
+  if (!copyAllButton) return;
+  const login = $("#adminCredentialLogin")?.textContent || "";
+  const password = $("#adminCredentialPassword")?.textContent || "";
+  try {
+    await copyText(`Логин: ${login}\nПароль: ${password}`);
+    toast("Скопировано");
+  } catch {
+    toast("Не удалось скопировать");
+  }
+}
+
 function handleTicketClick(event) {
   const button = event.target.closest("[data-ticket-id]");
   if (!button) return;
@@ -1374,6 +1416,33 @@ function renderAdminCreateForm() {
     `).join("")}
   `;
   if (festivals.length === 1) select.value = String(festivals[0].id);
+}
+
+function renderAdminCreatePhotosPreview(input) {
+  const preview = $("#adminCreatePhotosPreview");
+  if (!preview) return;
+  const files = Array.from(input?.files || []);
+  if (!files.length) {
+    preview.innerHTML = `<p>Фото пока не выбраны.</p>`;
+    preview.classList.remove("has-files");
+    return;
+  }
+  const visibleFiles = files.slice(0, 5);
+  preview.classList.add("has-files");
+  preview.innerHTML = `
+    <p>Выбрано фото: ${visibleFiles.length}${files.length > 5 ? " из 5, лишние не будут загружены" : ""}</p>
+    <div class="admin-photos-preview-grid">
+      ${visibleFiles.map((file, index) => `
+        <figure>
+          <img src="${URL.createObjectURL(file)}" alt="${escapeText(file.name)}" />
+          <figcaption>${index === 0 ? "Главное фото" : escapeText(file.name)}</figcaption>
+        </figure>
+      `).join("")}
+    </div>
+  `;
+  preview.querySelectorAll("img").forEach((img) => {
+    img.addEventListener("load", () => URL.revokeObjectURL(img.src), { once: true });
+  });
 }
 
 function adminStatusActions(application) {
@@ -1705,24 +1774,33 @@ async function handleAdminCreateApplication(event) {
   const form = event.currentTarget;
   const message = $("#adminCreateMessage");
   const button = form.querySelector('button[type="submit"]');
-  const data = Object.fromEntries(new FormData(form).entries());
-  if (data.phone && !data.phone.trim().startsWith("+")) data.phone = `+${data.phone.trim()}`;
+  const data = new FormData(form);
+  const photos = Array.from(form.photos?.files || []).slice(0, 5);
+  data.delete("photos");
+  photos.forEach((file) => data.append("photos", file, file.name));
+  const phoneDigits = String(data.get("phone") || "").replace(/\D/g, "");
+  if (phoneDigits) data.set("phone", `+${phoneDigits}`);
   if (button) button.disabled = true;
   if (message) message.textContent = "";
+  closeAdminCredentials();
   try {
     const application = await adminApi("/admin/applications/create/", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: data,
     });
     form.reset();
     renderAdminCreateForm();
+    renderAdminCreatePhotosPreview(form.photos);
     await loadAdminSummary();
     await loadAdminApplications();
     await loadAdminProfiles();
     renderAdminApplications();
     renderAdminProfiles();
     openTicket(application);
+    openAdminCredentials(application.admin_credentials || {
+      login: data.get("phone") || application.phone || "",
+      password: phoneDigits,
+    });
     if (message) message.textContent = "Участник добавлен, заявка принята. Билет открыт.";
     toast("Заявка создана, билет готов");
   } catch (error) {
@@ -2257,6 +2335,9 @@ function bindEvents() {
   $("#logoutButton")?.addEventListener("click", logout);
   $("#adminLoginForm")?.addEventListener("submit", handleAdminLogin);
   $("#adminCreateApplicationForm")?.addEventListener("submit", handleAdminCreateApplication);
+  $("#adminCreateApplicationForm [name='photos']")?.addEventListener("change", (event) => {
+    renderAdminCreatePhotosPreview(event.currentTarget);
+  });
   $("#verifyLoginForm")?.addEventListener("submit", handleVerifyLogin);
   $("#adminSearch")?.addEventListener("input", (event) => {
     state.adminSearch = event.target.value;
@@ -2283,6 +2364,11 @@ function bindEvents() {
   $("#avatarModalClose")?.addEventListener("click", closeAvatarModal);
   $("#ticketModalClose")?.addEventListener("click", closeTicketModal);
   $("#ticketPrintButton")?.addEventListener("click", printTicket);
+  $("#adminCredentialsClose")?.addEventListener("click", closeAdminCredentials);
+  $("#adminCredentialsModal")?.addEventListener("click", (event) => {
+    if (event.target.id === "adminCredentialsModal") closeAdminCredentials();
+    handleCredentialsCopy(event);
+  });
   $("#avatarPickButton")?.addEventListener("click", () => $("#avatarFileInput")?.click());
   $("#avatarFileInput")?.addEventListener("change", handleAvatarFile);
   $("#avatarZoom")?.addEventListener("input", (event) => {
