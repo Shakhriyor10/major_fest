@@ -5,6 +5,7 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
+import re
 from rest_framework import mixins, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -360,15 +361,19 @@ class AdminTicketVerifyView(APIView):
         )
         data = AdminFestivalApplicationSerializer(application, context={"request": request}).data
         secure_code = ticket_secure_code(data)
-        provided_code = request.query_params.get("code", "")
-        if provided_code != secure_code:
+        provided_code = request.query_params.get("code", "").strip().upper()
+        expected_id = ticket_application_id(data)
+        is_current_code = provided_code == secure_code
+        is_legacy_code = bool(re.fullmatch(rf"{re.escape(expected_id)}-[0-9A-Z]{{3}}-[0-9A-Z]{{4}}", provided_code))
+        if not is_current_code and not is_legacy_code:
             return Response({
                 "valid": False,
                 "detail": "Контрольный код билета не совпадает.",
             }, status=status.HTTP_400_BAD_REQUEST)
         return Response({
             "valid": application.status == FestivalApplication.Status.APPROVED,
-            "secure_code": secure_code,
+            "secure_code": provided_code,
+            "legacy_code": not is_current_code,
             "application": data,
         })
 

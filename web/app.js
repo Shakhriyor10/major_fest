@@ -876,10 +876,10 @@ function ticketSecuritySeed(application) {
   const cars = applicationCarsText(application);
   return [
     ticketApplicationId(application),
-    application?.participant || state.profile?.id || "",
+    application?.participant || "",
     application?.festival || "",
     application?.created_at || "",
-    state.profile?.phone || application?.phone || "",
+    application?.phone || "",
     cars,
   ].join("|");
 }
@@ -1097,7 +1097,7 @@ function ticketMarkup(application) {
   const secureCode = ticketSecureCode(application);
   const status = ticketStatusLabel(application);
   const owner = applicationOwnerName(application);
-  const phone = application?.phone || state.profile?.phone || "Телефон не указан";
+  const phone = application?.phone || "Телефон не указан";
   const cars = applicationCarsText(application);
   return `
     <article class="festival-ticket">
