@@ -61,6 +61,23 @@ For a physical phone, replace `API_BASE_URL` in `mobile/src/api.ts` with your co
 export const API_BASE_URL = "http://192.168.1.25:8000/api";
 ```
 
+## Telegram bot for approved applicants
+
+Telegram Bot API cannot find people by phone number or force-add them to a group. This bot asks an applicant to share their own contact, matches it with an approved application, and creates a one-use invite link.
+
+Make the bot an administrator of the target group with permission to invite users, then run:
+
+```powershell
+pip install -r requirements.txt
+cd backend
+python manage.py migrate
+$env:TELEGRAM_BOT_TOKEN="token from BotFather"
+$env:TELEGRAM_GROUP_ID="-1001234567890"
+python manage.py run_telegram_bot
+```
+
+`TELEGRAM_GROUP_ID` is the numeric supergroup ID, normally beginning with `-100`.
+
 ## First Product Flow
 
 1. Organizer creates a festival with title, cover image, dates, prize fund, prize places, and car slots.

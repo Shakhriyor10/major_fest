@@ -56,7 +56,11 @@ def ticket_secure_code(application):
             CAR_PURPOSE_LABELS.get(car.get("purpose") or ""),
         ]))
         for car in cars
-    ) or "Автомобиль не указан"
+    )
+    if not cars_text:
+        legacy_car = f"{application.get('car_make') or ''} {application.get('car_model') or ''}".strip()
+        legacy_purpose = CAR_PURPOSE_LABELS.get(application.get("purpose") or "")
+        cars_text = " - ".join(filter(None, [legacy_car, legacy_purpose])) or "Автомобиль не указан"
     seed = "|".join([
         ticket_application_id(application),
         str(application.get("participant") or ""),
@@ -124,12 +128,13 @@ class AdminApplicationListView(APIView):
         if error:
             return error
         queryset = (
-            FestivalApplication.objects.select_related("festival", "participant")
+            FestivalApplication.objects.select_related("festival", "participant", "created_by")
             .prefetch_related("cars__photos", "participant__cars__photos", "photos")
             .order_by("-created_at")
         )
         search = request.query_params.get("search", "").strip()
         status_filter = request.query_params.get("status", "").strip()
+        purpose_filter = request.query_params.get("purpose", "").strip()
         if search:
             queryset = queryset.filter(
                 Q(participant_name__icontains=search)
@@ -145,13 +150,15 @@ class AdminApplicationListView(APIView):
                 queryset = queryset.filter(status__in=[FestivalApplication.Status.NEW, FestivalApplication.Status.REVIEWING])
             elif status_filter in [FestivalApplication.Status.APPROVED, FestivalApplication.Status.REJECTED]:
                 queryset = queryset.filter(status=status_filter)
+        if purpose_filter in ParticipantCar.Purpose.values:
+            queryset = queryset.filter(Q(purpose=purpose_filter) | Q(cars__purpose=purpose_filter)).distinct()
         serializer = AdminFestivalApplicationSerializer(queryset, many=True, context={"request": request})
         return Response(serializer.data)
 
 
 class AdminApplicationCreateView(APIView):
     def post(self, request):
-        _user, error = require_admin(request)
+        admin_user, error = require_admin(request)
         if error:
             return error
 
@@ -159,7 +166,6 @@ class AdminApplicationCreateView(APIView):
         required_fields = [
             "festival",
             "full_name",
-            "phone",
             "car_make",
             "car_model",
             "car_year",
@@ -184,12 +190,16 @@ class AdminApplicationCreateView(APIView):
 
         festival = get_object_or_404(Festival, pk=data.get("festival"))
         phone_digits = "".join(ch for ch in str(data.get("phone", "")) if ch.isdigit())
-        if len(phone_digits) < 7:
+        if phone_digits and len(phone_digits) < 7:
             return Response({"phone": "Укажите номер телефона полностью."}, status=status.HTTP_400_BAD_REQUEST)
-        phone = f"+{phone_digits}"
+        phone = f"+{phone_digits}" if phone_digits else ""
         raw_password = phone_digits
         full_name = str(data.get("full_name", "")).strip()
-        if ParticipantProfile.objects.filter(phone=phone).exists():
+        existing_phone_digits = {
+            "".join(ch for ch in existing_phone if ch.isdigit())
+            for existing_phone in ParticipantProfile.objects.values_list("phone", flat=True)
+        }
+        if phone_digits and phone_digits in existing_phone_digits:
             return Response({
                 "phone": "С этим номером уже есть профиль. Нельзя создать новую заявку через эту форму."
             }, status=status.HTTP_400_BAD_REQUEST)
@@ -201,58 +211,64 @@ class AdminApplicationCreateView(APIView):
                 return Response({"photos": "Размер одного фото не должен превышать 50 МБ."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            profile = ParticipantProfile.objects.create(
+            profile = None
+            car = None
+            if phone:
+                profile = ParticipantProfile.objects.create(
+                    phone=phone,
+                    full_name=full_name,
+                    telegram=str(data.get("telegram", "")).strip(),
+                    city=str(data.get("city", "")).strip(),
+                )
+                profile.set_password(raw_password)
+                profile.save(update_fields=["password_hash"])
+                car = ParticipantCar.objects.create(
+                    owner=profile,
+                    make=str(data.get("car_make", "")).strip(),
+                    model=str(data.get("car_model", "")).strip(),
+                    year=car_year,
+                    engine=str(data.get("engine", "")).strip(),
+                    purpose=purpose,
+                    condition=str(data.get("condition", "")).strip(),
+                    tuning_details=str(data.get("tuning_details", "")).strip(),
+                )
+            application = FestivalApplication.objects.create(
+                festival=festival,
+                participant=profile,
+                created_by=admin_user,
+                participant_name=full_name,
                 phone=phone,
-                full_name=full_name,
                 telegram=str(data.get("telegram", "")).strip(),
                 city=str(data.get("city", "")).strip(),
-            )
-            profile.set_password(raw_password)
-            profile.save(update_fields=["password_hash"])
-            car = ParticipantCar.objects.create(
-                owner=profile,
-                make=str(data.get("car_make", "")).strip(),
-                model=str(data.get("car_model", "")).strip(),
-                year=car_year,
+                car_make=str(data.get("car_make", "")).strip(),
+                car_model=str(data.get("car_model", "")).strip(),
+                car_year=car_year,
                 engine=str(data.get("engine", "")).strip(),
                 purpose=purpose,
                 condition=str(data.get("condition", "")).strip(),
                 tuning_details=str(data.get("tuning_details", "")).strip(),
-            )
-            application = FestivalApplication.objects.create(
-                festival=festival,
-                participant=profile,
-                participant_name=profile.full_name,
-                phone=profile.phone,
-                telegram=profile.telegram,
-                city=profile.city,
-                car_make=car.make,
-                car_model=car.model,
-                car_year=car.year,
-                engine=car.engine,
-                condition=car.condition,
-                tuning_details=car.tuning_details,
                 status=FestivalApplication.Status.APPROVED,
-                moderator_note="Р—Р°СЏРІРєР° РґРѕР±Р°РІР»РµРЅР° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј.",
+                moderator_note="Заявка добавлена администратором.",
             )
-            application.cars.set([car])
+            if car:
+                application.cars.set([car])
             for index, photo in enumerate(photos):
-                car_photo = ParticipantCarPhoto.objects.create(car=car, image=photo)
-                ApplicationPhoto.objects.create(application=application, image=car_photo.image)
-                if index == 0 and not car.main_photo:
-                    car.main_photo = car_photo.image
-                    car.save(update_fields=["main_photo"])
+                if car:
+                    car_photo = ParticipantCarPhoto.objects.create(car=car, image=photo)
+                    ApplicationPhoto.objects.create(application=application, image=car_photo.image)
+                    if index == 0 and not car.main_photo:
+                        car.main_photo = car_photo.image
+                        car.save(update_fields=["main_photo"])
+                else:
+                    ApplicationPhoto.objects.create(application=application, image=photo)
 
         application = (
-            FestivalApplication.objects.select_related("festival", "participant")
+            FestivalApplication.objects.select_related("festival", "participant", "created_by")
             .prefetch_related("cars__photos", "participant__cars__photos", "photos")
             .get(pk=application.pk)
         )
         response_data = AdminFestivalApplicationSerializer(application, context={"request": request}).data
-        response_data["admin_credentials"] = {
-            "login": phone,
-            "password": raw_password,
-        }
+        response_data["admin_credentials"] = ({"login": phone, "password": raw_password} if phone else None)
         return Response(response_data, status=status.HTTP_201_CREATED)
 
 
@@ -337,9 +353,6 @@ class AdminApplicationDetailView(APIView):
 
 class AdminTicketVerifyView(APIView):
     def get(self, request, pk):
-        _user, error = require_admin(request)
-        if error:
-            return error
         application = get_object_or_404(
             FestivalApplication.objects.select_related("festival", "participant")
             .prefetch_related("cars__photos", "participant__cars__photos", "photos"),

@@ -122,7 +122,7 @@ class ParticipantCarSerializer(serializers.ModelSerializer):
             "uploaded_photos",
             "created_at",
         ]
-        read_only_fields = ["created_at"]
+        read_only_fields = ["created_at", "created_by"]
 
     def validate_uploaded_photos(self, photos):
         if len(photos) > 5:
@@ -260,6 +260,7 @@ class FestivalApplicationSerializer(serializers.ModelSerializer):
             "id",
             "festival",
             "participant",
+            "created_by",
             "cars",
             "cars_detail",
             "participant_name",
@@ -270,6 +271,7 @@ class FestivalApplicationSerializer(serializers.ModelSerializer):
             "car_model",
             "car_year",
             "engine",
+            "purpose",
             "condition",
             "tuning_details",
             "status",
@@ -278,7 +280,7 @@ class FestivalApplicationSerializer(serializers.ModelSerializer):
             "uploaded_photos",
             "created_at",
         ]
-        read_only_fields = ["status", "moderator_note", "created_at"]
+        read_only_fields = ["status", "moderator_note", "created_by", "created_at"]
 
     def validate(self, attrs):
         festival = attrs.get("festival") or getattr(self.instance, "festival", None)
@@ -325,7 +327,8 @@ class FestivalApplicationSerializer(serializers.ModelSerializer):
 
 class AdminFestivalApplicationSerializer(FestivalApplicationSerializer):
     participant_detail = ParticipantProfileSerializer(source="participant", read_only=True)
+    created_by_username = serializers.CharField(source="created_by.username", read_only=True, allow_null=True)
 
     class Meta(FestivalApplicationSerializer.Meta):
-        fields = FestivalApplicationSerializer.Meta.fields + ["participant_detail"]
+        fields = FestivalApplicationSerializer.Meta.fields + ["participant_detail", "created_by_username"]
         read_only_fields = ["created_at"]

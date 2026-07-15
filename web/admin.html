@@ -102,7 +102,8 @@
               </label>
               <label>
                 Телефон
-                <input name="phone" placeholder="+998938188818" required />
+                <input name="phone" placeholder="+998938188818 (необязательно)" />
+                <small>Без номера профиль пользователя не создаётся; заявка будет записана на администратора.</small>
               </label>
               <label>
                 Telegram
@@ -173,6 +174,15 @@
           </div>
           <input id="adminSearch" type="search" placeholder="Поиск по имени, телефону, авто" />
         </section>
+
+        <select class="admin-purpose-filter" id="adminPurposeFilter" aria-label="Фильтр по категории">
+          <option value="all">Все категории</option>
+          <option value="avtozvuk">Автозвук</option>
+          <option value="drift">Дрифт</option>
+          <option value="retro">Ретро</option>
+          <option value="milliy">Миллий</option>
+          <option value="tuning">Тюнинг</option>
+        </select>
 
         <section class="admin-applications reveal" id="adminApplications">
           <article class="empty-card">
@@ -282,6 +292,6 @@
         <p id="imageViewerCaption"></p>
       </div>
     </div>
-    <script src="/web/app.js?v=30"></script>
+    <script src="/web/app.js?v=32"></script>
   </body>
 </html>

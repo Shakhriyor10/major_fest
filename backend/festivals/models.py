@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.contrib.auth.hashers import check_password, make_password
+from django.conf import settings
 from django.db import models
 
 
@@ -229,6 +230,8 @@ class ParticipantCarPhoto(models.Model):
 
 
 class FestivalApplication(models.Model):
+    purpose = models.CharField(max_length=20, choices=ParticipantCar.Purpose.choices, blank=True, default="")
+
     class Status(models.TextChoices):
         NEW = "new", "Новая"
         REVIEWING = "reviewing", "На рассмотрении"
@@ -248,6 +251,14 @@ class FestivalApplication(models.Model):
         null=True,
         blank=True,
         verbose_name="Участник",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="created_festival_applications",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Создано администратором",
     )
     cars = models.ManyToManyField(
         ParticipantCar,
@@ -296,3 +307,24 @@ class ApplicationPhoto(models.Model):
 
     def __str__(self):
         return self.caption or f"Фото заявки #{self.application_id}"
+
+
+class TelegramGroupAccess(models.Model):
+    """A verified Telegram account linked to an approved application."""
+
+    application = models.OneToOneField(
+        FestivalApplication,
+        related_name="telegram_group_access",
+        on_delete=models.CASCADE,
+    )
+    telegram_user_id = models.BigIntegerField(db_index=True)
+    verified_phone = models.CharField(max_length=32)
+    invite_link = models.URLField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.telegram_user_id}: application #{self.application_id}"

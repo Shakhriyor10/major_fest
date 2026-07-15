@@ -31,31 +31,8 @@
       <section class="profile-hero reveal">
         <p class="eyebrow">Ticket verification</p>
         <h1>Проверка билета</h1>
-        <p>Доступно только администратору. После входа система сверит QR-код с заявкой и статусом участника.</p>
+        <p>Наведите камеру на QR-код билета — система автоматически сверит его с заявкой и статусом участника.</p>
       </section>
-
-      <form class="admin-login-card reveal" id="verifyLoginForm" hidden>
-        <div class="panel-head">
-          <div>
-            <h3>Вход администратора</h3>
-            <p class="muted">Нужен admin-доступ, чтобы открыть данные билета.</p>
-          </div>
-          <span class="icon-badge" data-icon="shield"></span>
-        </div>
-        <label>
-          Логин
-          <input name="username" autocomplete="username" required />
-        </label>
-        <label>
-          Пароль
-          <input name="password" type="password" autocomplete="current-password" required />
-        </label>
-        <button class="primary-button" type="submit">
-          <span class="icon" data-icon="shield"></span>
-          <span>Проверить билет</span>
-        </button>
-        <p class="form-message" id="verifyLoginMessage"></p>
-      </form>
 
       <section class="verify-card reveal" id="verifyResult">
         <span class="icon-badge" data-icon="ticket"></span>
@@ -88,6 +65,6 @@
     </footer>
 
     <div class="toast" id="toast"></div>
-    <script src="/web/app.js?v=18"></script>
+    <script src="/web/app.js?v=32"></script>
   </body>
 </html>

@@ -14,6 +14,7 @@ const state = {
   adminProfiles: [],
   adminSummary: null,
   adminFilter: "all",
+  adminPurposeFilter: "all",
   adminSearch: "",
   adminToken: localStorage.getItem(ADMIN_STORAGE_KEY) || "",
   selectedAdminApplication: null,
@@ -387,11 +388,21 @@ function renderNews(festival, place) {
   ];
   news.innerHTML = items.map((item) => `
     <article class="news-card">
-      ${item.image ? `<img src="${item.image}" alt="${item.title}">` : ""}
-      <h3>${item.title}</h3>
-      <p>${item.text}</p>
+      ${item.image ? `
+        <button class="news-image-button" type="button" data-image-open="${item.image}" data-image-title="${escapeText(item.title)}">
+          <img src="${item.image}" alt="${escapeText(item.title)}">
+        </button>
+      ` : ""}
+      <h3>${escapeText(item.title)}</h3>
+      <p>${escapeText(item.text)}</p>
     </article>
   `).join("");
+}
+
+function handleNewsClick(event) {
+  const imageButton = event.target.closest("[data-image-open]");
+  if (!imageButton) return;
+  openImageViewer(imageButton.dataset.imageOpen, imageButton.dataset.imageTitle || "Новость фестиваля");
 }
 
 function renderComments(festival) {
@@ -726,24 +737,27 @@ function renderApplications() {
     approved: "Одобрена",
     rejected: "Отказ",
   };
-  list.innerHTML = state.applications.map((application) => `
-    <article class="application-item application-${application.status}">
-      <div class="application-item-head">
-        <strong><span class="status-dot"></span>${labels[application.status] || escapeText(application.status)}</strong>
-        <span class="application-code">${ticketApplicationId(application)}</span>
-      </div>
-      <p>${application.cars_detail?.map((car) => `${escapeText(car.make)} ${escapeText(car.model)}`).join(", ") || "Авто не указано"}</p>
-      ${application.moderator_note ? `<small>${escapeText(application.moderator_note)}</small>` : ""}
-      ${application.status === "approved" ? `
-        <div class="application-actions">
-          <button class="primary-button ticket-open-button" type="button" data-ticket-id="${application.id}">
-            <span class="icon" data-icon="ticket"></span>
-            <span>Открыть билет</span>
-          </button>
+  list.innerHTML = state.applications.map((application) => {
+    const moderatorNote = moderatorNoteText(application.moderator_note);
+    return `
+      <article class="application-item application-${application.status}">
+        <div class="application-item-head">
+          <strong><span class="status-dot"></span>${labels[application.status] || escapeText(application.status)}</strong>
+          <span class="application-code">${ticketApplicationId(application)}</span>
         </div>
-      ` : ""}
-    </article>
-  `).join("");
+        <p>${application.cars_detail?.map((car) => `${escapeText(car.make)} ${escapeText(car.model)}`).join(", ") || "Авто не указано"}</p>
+        ${moderatorNote ? `<small>${escapeText(moderatorNote)}</small>` : ""}
+        ${application.status === "approved" ? `
+          <div class="application-actions">
+            <button class="primary-button ticket-open-button" type="button" data-ticket-id="${application.id}">
+              <span class="icon" data-icon="ticket"></span>
+              <span>Открыть билет</span>
+            </button>
+          </div>
+        ` : ""}
+      </article>
+    `;
+  }).join("");
   hydrateIcons(list);
 }
 
@@ -828,11 +842,20 @@ function applicationCarsText(application) {
         const purpose = carPurposeLabels[car.purpose] || "";
         return [name, purpose].filter(Boolean).join(" - ");
       }).join(", ")
-    : "Автомобиль не указан";
+    : [
+        `${application?.car_make || ""} ${application?.car_model || ""}`.trim(),
+        carPurposeLabels[application?.purpose] || "",
+      ].filter(Boolean).join(" - ") || "Автомобиль не указан";
 }
 
 function applicationLastSeen(application) {
   return formatLastSeen(application?.participant_detail?.last_seen_at || application?.last_seen_at);
+}
+
+function moderatorNoteText(note = "") {
+  if (!note) return "";
+  if (note.includes("Р") && note.includes("Р°")) return "Заявка добавлена администратором.";
+  return note;
 }
 
 function ticketStatusLabel(application) {
@@ -1298,6 +1321,7 @@ async function loadAdminApplications() {
   if (state.adminFilter !== "all") {
     params.set("status", state.adminFilter === "approved" ? "approved" : state.adminFilter === "rejected" ? "rejected" : "pending");
   }
+  if (state.adminPurposeFilter !== "all") params.set("purpose", state.adminPurposeFilter);
   const query = params.toString() ? `?${params}` : "";
   const payload = await adminApi(`/admin/applications/${query}`);
   state.adminApplications = Array.isArray(payload) ? payload : payload.results || [];
@@ -1336,6 +1360,9 @@ function filteredAdminApplications() {
   return state.adminApplications.filter((application) => {
     const group = applicationStatus(application).group;
     const matchesFilter = state.adminFilter === "all" || group === state.adminFilter;
+    const purposes = (application.cars_detail || []).map((car) => car.purpose);
+    if (application.purpose) purposes.push(application.purpose);
+    const matchesPurpose = state.adminPurposeFilter === "all" || purposes.includes(state.adminPurposeFilter);
     const text = [
       application.participant_name,
       application.phone,
@@ -1346,7 +1373,7 @@ function filteredAdminApplications() {
       application.car_year,
       application.engine,
     ].filter(Boolean).join(" ").toLowerCase();
-    return matchesFilter && (!query || text.includes(query));
+    return matchesFilter && matchesPurpose && (!query || text.includes(query));
   });
 }
 
@@ -1502,7 +1529,8 @@ function renderAdminApplications() {
       : `${application.car_make} ${application.car_model} ${application.car_year || ""}`.trim();
     const carPurposes = application.cars_detail?.length
       ? [...new Set(application.cars_detail.map((car) => carPurposeLabels[car.purpose]).filter(Boolean))].join(", ")
-      : "";
+      : (carPurposeLabels[application.purpose] || "");
+    const moderatorNote = moderatorNoteText(application.moderator_note);
     return `
       <article class="admin-application application-${application.status}" data-application-id="${application.id}">
         <button class="admin-application-photo" type="button" data-image-open="${applicationPhoto(application)}" data-image-title="${escapeText(cars || application.car_make || "Авто")}">
@@ -1521,13 +1549,14 @@ function renderAdminApplications() {
             <span><b>Telegram</b>${application.telegram || "Не указан"}</span>
             <span><b>Город</b>${application.city || "Не указан"}</span>
             <span><b>Авто</b>${cars || "Не указано"}</span>
+            ${application.created_by_username ? `<span><b>Добавил администратор</b>${escapeText(application.created_by_username)}</span>` : ""}
           </div>
           <div class="admin-car-details">
             ${carPurposes ? `<p><b>Категория:</b> ${escapeText(carPurposes)}</p>` : ""}
             <p><b>Двигатель:</b> ${application.engine || "Не указан"}</p>
             <p><b>Состояние:</b> ${application.condition || "Не указано"}</p>
             ${application.tuning_details ? `<p><b>Тюнинг:</b> ${application.tuning_details}</p>` : ""}
-            ${application.moderator_note ? `<p><b>Комментарий модератора:</b> ${application.moderator_note}</p>` : ""}
+            ${moderatorNote ? `<p><b>Комментарий модератора:</b> ${escapeText(moderatorNote)}</p>` : ""}
           </div>
           <div class="admin-card-actions">
             <button class="glass-button" type="button" data-admin-detail="${application.id}">Детально</button>
@@ -1664,6 +1693,7 @@ function renderAdminDetail(application) {
               <span><b>Телефон</b>${application.phone || "Не указан"}</span>
               <span><b>Telegram</b>${application.telegram || "Не указан"}</span>
               <span><b>Город</b>${application.city || "Не указан"}</span>
+              ${application.created_by_username ? `<span><b>Добавил администратор</b>${escapeText(application.created_by_username)}</span>` : ""}
             </div>
           </section>
           <section class="admin-detail-block">
@@ -1775,7 +1805,8 @@ async function handleAdminCreateApplication(event) {
   const message = $("#adminCreateMessage");
   const button = form.querySelector('button[type="submit"]');
   const data = new FormData(form);
-  const photos = Array.from(form.photos?.files || []).slice(0, 5);
+  const photosInput = form.querySelector('[name="photos"]');
+  const photos = Array.from(photosInput?.files || []).slice(0, 5);
   data.delete("photos");
   photos.forEach((file) => data.append("photos", file, file.name));
   const phoneDigits = String(data.get("phone") || "").replace(/\D/g, "");
@@ -1790,17 +1821,14 @@ async function handleAdminCreateApplication(event) {
     });
     form.reset();
     renderAdminCreateForm();
-    renderAdminCreatePhotosPreview(form.photos);
+    renderAdminCreatePhotosPreview(photosInput);
     await loadAdminSummary();
     await loadAdminApplications();
     await loadAdminProfiles();
     renderAdminApplications();
     renderAdminProfiles();
     openTicket(application);
-    openAdminCredentials(application.admin_credentials || {
-      login: data.get("phone") || application.phone || "",
-      password: phoneDigits,
-    });
+    if (application.admin_credentials) openAdminCredentials(application.admin_credentials);
     if (message) message.textContent = "Участник добавлен, заявка принята. Билет открыт.";
     toast("Заявка создана, билет готов");
   } catch (error) {
@@ -1909,30 +1937,15 @@ async function verifyTicketFromQr() {
   const params = new URLSearchParams(window.location.search);
   const id = params.get("i") || params.get("id");
   const code = params.get("c") || params.get("code");
-  const loginForm = $("#verifyLoginForm");
   if (!id || !code) {
-    if (loginForm) loginForm.hidden = true;
     renderVerifyResult("invalid", { detail: "В QR-коде нет данных билета." });
     return;
   }
-  if (!state.adminToken) {
-    if (loginForm) loginForm.hidden = false;
-    renderVerifyResult("login");
-    return;
-  }
-  if (loginForm) loginForm.hidden = true;
   renderVerifyResult("loading");
   try {
-    const payload = await adminApi(`/admin/tickets/${id}/verify/?code=${encodeURIComponent(code)}`);
+    const payload = await api(`/admin/tickets/${id}/verify/?code=${encodeURIComponent(code)}`);
     renderVerifyResult(payload.valid ? "valid" : "invalid", payload);
   } catch (error) {
-    if (error.status === 401 || error.status === 403) {
-      state.adminToken = "";
-      localStorage.removeItem(ADMIN_STORAGE_KEY);
-      if (loginForm) loginForm.hidden = false;
-      renderVerifyResult("login");
-      return;
-    }
     renderVerifyResult("invalid", { detail: error.message });
   }
 }
@@ -2332,6 +2345,7 @@ function bindEvents() {
   $("#applyForm")?.addEventListener("submit", handleApply);
   $("#commentForm")?.addEventListener("submit", handleCommentCreate);
   $("#commentsBox")?.addEventListener("click", handleCommentDelete);
+  $("#newsGrid")?.addEventListener("click", handleNewsClick);
   $("#logoutButton")?.addEventListener("click", logout);
   $("#adminLoginForm")?.addEventListener("submit", handleAdminLogin);
   $("#adminCreateApplicationForm")?.addEventListener("submit", handleAdminCreateApplication);
@@ -2352,6 +2366,11 @@ function bindEvents() {
     renderAdminApplications();
   });
   $("#adminApplications")?.addEventListener("click", handleAdminApplicationClick);
+  $("#adminPurposeFilter")?.addEventListener("change", async (event) => {
+    state.adminPurposeFilter = event.target.value;
+    await loadAdminApplications();
+    renderAdminApplications();
+  });
   $("#adminProfiles")?.addEventListener("submit", handleAdminPasswordChange);
   $("#adminDetailContent")?.addEventListener("click", handleAdminApplicationClick);
   $("#adminDetailContent")?.addEventListener("submit", handleAdminPasswordChange);

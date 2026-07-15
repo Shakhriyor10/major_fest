@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Samarkand Fest</title>
-    <link rel="stylesheet" href="/web/styles.css?v=20" />
+    <link rel="stylesheet" href="/web/styles.css?v=26" />
   </head>
   <body data-page="home">
     <div class="site-bg" aria-hidden="true"></div>
@@ -132,6 +132,13 @@
     </footer>
 
     <div class="toast" id="toast"></div>
-    <script src="/web/app.js"></script>
+    <div class="modal image-viewer-modal" id="imageViewerModal" hidden>
+      <div class="image-viewer-panel">
+        <button class="icon-only image-viewer-close" id="imageViewerClose" type="button" aria-label="Закрыть">×</button>
+        <img id="imageViewerImage" alt="" />
+        <p id="imageViewerCaption"></p>
+      </div>
+    </div>
+    <script src="/web/app.js?v=34"></script>
   </body>
 </html>
